@@ -85,6 +85,14 @@ LANGS = {
         "max_compare_warning": "Du kannst maximal 3 Rezepte gleichzeitig vergleichen.",
         "only_favorites": "Nur Favoriten",
         "favorite": "Favorit",
+        "image_url": "Bild-URL",
+        "image_url_placeholder": "https://example.com/bild.jpg",
+        "grain": "Körnung",
+        "tone_curve": "Gradationskurve",
+        "color_chrome": "Color Chrome Effekt",
+        "tags": "Tags",
+        "tags_placeholder": "z.B. sonnig, reise, kontrast",
+        "filter_tags": "Tags filtern",
     },
     "en": {
         "title": "Fuji X-T2 Recipe Management",
@@ -160,6 +168,14 @@ LANGS = {
         "max_compare_warning": "You can compare a maximum of 3 recipes at once.",
         "only_favorites": "Only Favorites",
         "favorite": "Favorite",
+        "image_url": "Image URL",
+        "image_url_placeholder": "https://example.com/image.jpg",
+        "grain": "Grain Effect",
+        "tone_curve": "Tone Curve",
+        "color_chrome": "Color Chrome Effect",
+        "tags": "Tags",
+        "tags_placeholder": "e.g. sunny, travel, contrast",
+        "filter_tags": "Filter by tags",
     },
 }
 
@@ -196,6 +212,32 @@ def bicat(cat_name):
     return cat_name
 
 
+def safe_int(val, default=0):
+    """Safely cast value to integer, handling floats as strings."""
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return default
+
+
+def recipe_matches_sim(recipe_sim, selected_sims):
+    """Check if any of the recipe's film simulations are in the selected list."""
+    if not selected_sims:
+        return True
+    sims_in_recipe = [s.strip().lower() for s in recipe_sim.split("/") if s.strip()]
+    return any(s in [opt.lower() for opt in selected_sims] for s in sims_in_recipe)
+
+
+def recipe_matches_tags(recipe_tags_str, selected_tags):
+    """Check if the recipe contains any of the selected tags (case-insensitive)."""
+    if not selected_tags:
+        return True
+    if not recipe_tags_str:
+        return False
+    recipe_tags = [tag.strip().lower() for tag in recipe_tags_str.split(",") if tag.strip()]
+    return any(tag.lower() in recipe_tags for tag in selected_tags)
+
+
 def convert_to_csv(data_list):
     """Convert list of dictionaries to a CSV string."""
     if not data_list:
@@ -228,7 +270,8 @@ def get_sheet():
     return sheet
 
 
-def load_rezepte(t):
+@st.cache_data(ttl=60)
+def load_rezepte(lang_code="de"):
     """Load all recipes from Google Sheets."""
     try:
         sheet = get_sheet()
@@ -237,8 +280,18 @@ def load_rezepte(t):
             r["_row_idx"] = idx
         return data
     except Exception as e:
-        st.error(t["loading_error"].format(error=e))
+        err_msg = LANGS.get(lang_code, LANGS["de"])["loading_error"].format(error=e)
+        st.error(err_msg)
         return []
+
+
+REQUIRED_HEADERS = [
+    "name", "kategorie", "film_simulation", "weissabgleich",
+    "wb_shift", "dynamikbereich", "lichter", "schatten",
+    "farbe", "schaerfe", "rauschreduzierung", "notizen",
+    "quelle", "datum", "favorit", "bild_url", "grain",
+    "tone_curve", "color_chrome", "tags"
+]
 
 
 def update_rezept(index, rezept, t):
@@ -248,9 +301,13 @@ def update_rezept(index, rezept, t):
         headers = sheet.row_values(1)
         if not headers:
             return False
-        if "favorit" not in headers:
-            sheet.update_cell(1, len(headers) + 1, "favorit")
-            headers.append("favorit")
+        
+        # Schema upgrade: append any missing columns
+        for req in REQUIRED_HEADERS:
+            if req not in headers:
+                sheet.update_cell(1, len(headers) + 1, req)
+                headers.append(req)
+                
         row = [rezept.get(h, "") for h in headers]
         sheet.update(range_name=f"A{index + 2}", values=[row])
         return True
@@ -265,17 +322,15 @@ def save_rezept(rezept, t):
         sheet = get_sheet()
         headers = sheet.row_values(1)
         if not headers:
-            headers = [
-                "name", "kategorie", "film_simulation", "weissabgleich",
-                "wb_shift", "dynamikbereich", "lichter", "schatten",
-                "farbe", "schaerfe", "rauschreduzierung", "notizen",
-                "quelle", "datum", "favorit"
-            ]
+            headers = REQUIRED_HEADERS.copy()
             sheet.append_row(headers)
         else:
-            if "favorit" not in headers:
-                sheet.update_cell(1, len(headers) + 1, "favorit")
-                headers.append("favorit")
+            # Schema upgrade: append any missing columns
+            for req in REQUIRED_HEADERS:
+                if req not in headers:
+                    sheet.update_cell(1, len(headers) + 1, req)
+                    headers.append(req)
+                    
         row = [rezept.get(h, "") for h in headers]
         sheet.append_row(row)
         return True
@@ -311,74 +366,180 @@ def scrape_fujixweekly(url):
         if title:
             data["name"] = title.get_text().split("|")[0].strip()
 
-        # Film Simulation
-        film_sims = [
-            "Provia", "Standard", "Velvia", "Vivid", "Astia", "Soft",
-            "Classic Chrome", "PRO Neg", "Acros", "Monochrome", "Sepia", "Eterna",
+        # Film simulation candidates
+        film_sim_options_lower = [
+            "provia", "standard", "velvia", "vivid", "astia", "soft",
+            "classic chrome", "pro neg", "acros", "monochrome", "sepia", "eterna",
         ]
-        for sim in film_sims:
-            if re.search(rf"Film Simulation[:\s]+{sim}", content, re.IGNORECASE):
-                data["film_simulation"] = sim
-                break
+        film_sim_map = {
+            "provia": "Provia/Standard",
+            "standard": "Provia/Standard",
+            "velvia": "Velvia/Vivid",
+            "vivid": "Velvia/Vivid",
+            "astia": "Astia/Soft",
+            "soft": "Astia/Soft",
+            "classic chrome": "Classic Chrome",
+            "pro neg. hi": "PRO Neg. Hi",
+            "pro neg. std": "PRO Neg. Std",
+            "pro neg": "PRO Neg. Hi",
+            "acros": "Acros",
+            "monochrome": "Monochrome",
+            "sepia": "Sepia",
+            "eterna": "Eterna/Cinema",
+        }
 
-        # Dynamic Range
-        dr_match = re.search(
-            r"(DR|Dynamic Range)[:\s]+(DR)?([0-9]+)", content, re.IGNORECASE
-        )
-        if dr_match:
-            data["dynamikbereich"] = f"DR{dr_match.group(3)}"
+        # Auto-Scraping Image (Bilder direkt aus der Internetseite übernehmen)
+        # 1. Try OpenGraph image metadata
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            data["bild_url"] = og_image.get("content")
 
-        # White Balance
-        wb_match = re.search(
-            r"(White Balance|Weissabgleich)[:\s]+([A-Za-z0-9\s]+)",
-            content, re.IGNORECASE,
-        )
-        if wb_match:
-            data["weissabgleich"] = wb_match.group(2).strip()
+        # 2. Try Twitter image metadata
+        if "bild_url" not in data or not data["bild_url"]:
+            twitter_image = soup.find("meta", name="twitter:image")
+            if twitter_image and twitter_image.get("content"):
+                data["bild_url"] = twitter_image.get("content")
 
-        # WB Shift
-        wb_shift_match = re.search(
-            r"(WB Shift|White Balance Shift)[:\s]+([RB][-+0-9\s,]+)",
-            content, re.IGNORECASE,
-        )
-        if wb_shift_match:
-            data["wb_shift"] = wb_shift_match.group(2).strip()
+        # Helper to get the best source attribute from an img tag
+        def get_best_img_src(img_tag):
+            if not img_tag:
+                return None
+            for attr in ["data-orig-file", "data-lazy-src", "src", "srcset"]:
+                val = img_tag.get(attr)
+                if val:
+                    if attr == "srcset":
+                        urls = [item.strip().split()[0] for item in val.split(",") if item.strip()]
+                        if urls:
+                            return urls[-1]
+                    else:
+                        return val
+            return None
 
-        # Highlights
-        hl_match = re.search(
-            r"(Highlight|Tone)[:\s]+([+-]?[0-9])", content, re.IGNORECASE
-        )
-        if hl_match:
-            data["lichter"] = int(hl_match.group(2))
+        # 3. Try entry-content images
+        if "bild_url" not in data or not data["bild_url"]:
+            entry_content = soup.find(class_="entry-content")
+            if entry_content:
+                for img in entry_content.find_all("img"):
+                    src = get_best_img_src(img)
+                    if src and "avatar" not in src and "logo" not in src and not src.endswith(".gif") and "gravatar" not in src:
+                        data["bild_url"] = src
+                        break
 
-        # Shadows
-        sh_match = re.search(
-            r"Shadow[:\s]+([+-]?[0-9])", content, re.IGNORECASE
-        )
-        if sh_match:
-            data["schatten"] = int(sh_match.group(2))
+        # 4. Fallback to any first non-avatar image on the page
+        if "bild_url" not in data or not data["bild_url"]:
+            for img in soup.find_all("img"):
+                src = get_best_img_src(img)
+                if src and "avatar" not in src and "logo" not in src and not src.endswith(".gif") and "gravatar" not in src:
+                    data["bild_url"] = src
+                    break
 
-        # Color
-        col_match = re.search(
-            r"(Color|Farbe)[:\s]+([+-]?[0-9])", content, re.IGNORECASE
-        )
-        if col_match:
-            data["farbe"] = int(col_match.group(2))
+        # LI parsing (robust WordPress layout parsing)
+        li_parsed = {}
+        for li in soup.find_all("li"):
+            text = li.get_text().strip()
+            if ":" in text:
+                parts = text.split(":", 1)
+                key = parts[0].strip().lower()
+                val = parts[1].strip()
 
-        # Sharpness
-        sharp_match = re.search(
-            r"(Sharpness|Schaerfe)[:\s]+([+-]?[0-9])", content, re.IGNORECASE
-        )
-        if sharp_match:
-            data["schaerfe"] = int(sharp_match.group(2))
+                if "film simulation" in key:
+                    for sim in film_sim_options_lower:
+                        if sim in val.lower():
+                            li_parsed["film_simulation"] = film_sim_map.get(sim, sim.title())
+                            break
+                elif "dynamic range" in key or "dr" in key:
+                    dr_match = re.search(r"DR?([0-9]+|Auto)", val, re.IGNORECASE)
+                    if dr_match:
+                        li_parsed["dynamikbereich"] = f"DR{dr_match.group(1)}" if dr_match.group(1).isdigit() else dr_match.group(1)
+                elif "white balance" in key or "weissabgleich" in key:
+                    li_parsed["weissabgleich"] = val
+                    shift_match = re.search(r"([RB][-+0-9\s,]+)", val, re.IGNORECASE)
+                    if shift_match:
+                        li_parsed["wb_shift"] = shift_match.group(1).strip()
+                elif "wb shift" in key or "white balance shift" in key:
+                    li_parsed["wb_shift"] = val
+                elif "highlight" in key or "lichter" in key:
+                    tone_match = re.search(r"([+-]?[0-9.]+)", val)
+                    if tone_match:
+                        li_parsed["lichter"] = safe_int(tone_match.group(1))
+                elif "shadow" in key or "schatten" in key:
+                    tone_match = re.search(r"([+-]?[0-9.]+)", val)
+                    if tone_match:
+                        li_parsed["schatten"] = safe_int(tone_match.group(1))
+                elif "color" in key or "farbe" in key:
+                    tone_match = re.search(r"([+-]?[0-9.]+)", val)
+                    if tone_match:
+                        li_parsed["farbe"] = safe_int(tone_match.group(1))
+                elif "sharpness" in key or "schaerfe" in key:
+                    tone_match = re.search(r"([+-]?[0-9.]+)", val)
+                    if tone_match:
+                        li_parsed["schaerfe"] = safe_int(tone_match.group(1))
+                elif "noise reduction" in key or "rauschreduzierung" in key:
+                    tone_match = re.search(r"([+-]?[0-9.]+)", val)
+                    if tone_match:
+                        li_parsed["rauschreduzierung"] = safe_int(tone_match.group(1))
+                elif "grain" in key or "körnung" in key:
+                    for opt in ["weak", "strong", "off"]:
+                        if opt in val.lower():
+                            li_parsed["grain"] = opt.title()
+                            break
+                elif "chrome" in key or "chrome effect" in key:
+                    for opt in ["weak", "strong", "off"]:
+                        if opt in val.lower():
+                            li_parsed["color_chrome"] = opt.title()
+                            break
+                elif "tone curve" in key:
+                    li_parsed["tone_curve"] = val
 
-        # Noise Reduction
-        nr_match = re.search(
-            r"(Noise Reduction|Rauschreduzierung)[:\s]+([+-]?[0-9])",
-            content, re.IGNORECASE,
-        )
-        if nr_match:
-            data["rauschreduzierung"] = int(nr_match.group(2))
+        # If we successfully parsed at least 3 parameters via LI, merge them
+        if len(li_parsed) >= 3:
+            data.update(li_parsed)
+        else:
+            # Fallback to regex on raw content
+            for sim in film_sim_options_lower:
+                if re.search(rf"Film Simulation[:\s]+{sim}", content, re.IGNORECASE):
+                    data["film_simulation"] = film_sim_map.get(sim, sim.title())
+                    break
+
+            dr_match = re.search(r"(DR|Dynamic Range)[:\s]+(DR)?([0-9]+)", content, re.IGNORECASE)
+            if dr_match:
+                data["dynamikbereich"] = f"DR{dr_match.group(3)}"
+
+            wb_match = re.search(r"(White Balance|Weissabgleich)[:\s]+([A-Za-z0-9\s]+)", content, re.IGNORECASE)
+            if wb_match:
+                data["weissabgleich"] = wb_match.group(2).strip()
+
+            wb_shift_match = re.search(r"(WB Shift|White Balance Shift)[:\s]+([RB][-+0-9\s,]+)", content, re.IGNORECASE)
+            if wb_shift_match:
+                data["wb_shift"] = wb_shift_match.group(2).strip()
+
+            hl_match = re.search(r"(Highlight|Tone)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+            if hl_match:
+                data["lichter"] = safe_int(hl_match.group(2))
+
+            sh_match = re.search(r"Shadow[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+            if sh_match:
+                data["schatten"] = safe_int(sh_match.group(1))
+
+            col_match = re.search(r"(Color|Farbe)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+            if col_match:
+                data["farbe"] = safe_int(col_match.group(2))
+
+            sharp_match = re.search(r"(Sharpness|Schaerfe)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+            if sharp_match:
+                data["schaerfe"] = safe_int(sharp_match.group(2))
+
+            nr_match = re.search(r"(Noise Reduction|Rauschreduzierung)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+            if nr_match:
+                data["rauschreduzierung"] = safe_int(nr_match.group(2))
+
+            grain_match = re.search(r"Grain (Effect)?[:\s]+(Weak|Strong|Off)", content, re.IGNORECASE)
+            if grain_match:
+                data["grain"] = grain_match.group(2).title()
+
+            cc_match = re.search(r"(Color|Colour) Chrome (Effect)?[:\s]+(Weak|Strong|Off)", content, re.IGNORECASE)
+            if cc_match:
+                data["color_chrome"] = cc_match.group(3).title()
 
         data["quelle"] = url
         return data, None
@@ -430,7 +591,7 @@ st.sidebar.header(t["filter"])
 search_query = st.sidebar.text_input(t["search"], placeholder=t["search_placeholder"])
 only_favs = st.sidebar.checkbox(t["only_favorites"], value=False)
 
-rezepte = load_rezepte(t)
+rezepte = load_rezepte(st.session_state.get("lang", "de"))
 
 alle_kategorien = sorted(
     set(r.get("kategorie", "Allgemein") for r in rezepte)
@@ -446,10 +607,26 @@ filter_sim = st.sidebar.multiselect(
     t["film_simulation"], alle_sims, default=alle_sims
 )
 
+# Extract unique tags for sidebar filter
+alle_tags_set = set()
+for r in rezepte:
+    tags_str = r.get("tags", "")
+    if tags_str:
+        for tag in tags_str.split(","):
+            clean_tag = tag.strip()
+            if clean_tag:
+                alle_tags_set.add(clean_tag)
+alle_tags = sorted(list(alle_tags_set))
+
+filter_tags = st.sidebar.multiselect(
+    t["filter_tags"], alle_tags, default=[]
+)
+
 gefiltert = [
     r for r in rezepte
     if r.get("kategorie", "Allgemein") in filter_kat
-    and r.get("film_simulation", "") in (filter_sim or alle_sims)
+    and recipe_matches_sim(r.get("film_simulation", ""), filter_sim)
+    and recipe_matches_tags(r.get("tags", ""), filter_tags)
     and (not only_favs or r.get("favorit", "").strip().lower() == "ja")
     and (
         not search_query
@@ -513,6 +690,9 @@ with tab1:
                     st.markdown(f"#### {cr.get('name', t['unknown'])}")
                     st.caption(f"{bicat(cr.get('kategorie', ''))} | {cr.get('film_simulation', '')}")
                     
+                    if cr.get("bild_url"):
+                        st.image(cr["bild_url"], use_container_width=True)
+                    
                     st.markdown(f"**{bilabel('film_simulation')}:** {cr.get('film_simulation', '-')}")
                     st.markdown(f"**{bilabel('white_balance')}:** {cr.get('weissabgleich', '-')}")
                     st.markdown(f"**{bilabel('wb_shift')}:** {cr.get('wb_shift', '-')}")
@@ -522,6 +702,15 @@ with tab1:
                     st.markdown(f"**{bilabel('color')}:** {cr.get('farbe', '-')}")
                     st.markdown(f"**{bilabel('sharpness')}:** {cr.get('schaerfe', '-')}")
                     st.markdown(f"**{bilabel('noise_reduction')}:** {cr.get('rauschreduzierung', '-')}")
+                    st.markdown(f"**{bilabel('grain')}:** {cr.get('grain', '-')}")
+                    st.markdown(f"**{bilabel('tone_curve')}:** {cr.get('tone_curve', '-')}")
+                    st.markdown(f"**{bilabel('color_chrome')}:** {cr.get('color_chrome', '-')}")
+                    
+                    # Tags display as code badges
+                    tags_list = [tag.strip() for tag in cr.get("tags", "").split(",") if tag.strip()]
+                    if tags_list:
+                        st.markdown(" ".join([f"`#{tag}`" for tag in tags_list]))
+                        
                     if cr.get("notizen"):
                         st.caption(f"📝 {cr.get('notizen')}")
                         
@@ -590,6 +779,9 @@ with tab1:
                             value=r.get("wb_shift", ""),
                             key=f"edit_wb_shift_{r['_row_idx']}"
                         )
+                        grain_options = ["Off", "Weak", "Strong"]
+                        grain_default = grain_options.index(r.get("grain")) if r.get("grain") in grain_options else 0
+                        edit_grain = st.selectbox(bilabel("grain"), grain_options, index=grain_default, key=f"edit_grain_{r['_row_idx']}")
                     with col2:
                         dr_options = ["DR100", "DR200", "DR400", "Auto"]
                         dr_default = dr_options.index(r.get("dynamikbereich")) if r.get("dynamikbereich") in dr_options else 0
@@ -600,12 +792,6 @@ with tab1:
                             key=f"edit_dr_{r['_row_idx']}"
                         )
                         
-                        def safe_int(val, default=0):
-                            try:
-                                return int(float(val))
-                            except (ValueError, TypeError):
-                                return default
-                                
                         edit_lichter = st.slider(
                             bilabel("highlights"), -2, 4, safe_int(r.get("lichter")), key=f"edit_hl_{r['_row_idx']}"
                         )
@@ -621,7 +807,24 @@ with tab1:
                         edit_nr = st.slider(
                             bilabel("noise_reduction"), -4, 4, safe_int(r.get("rauschreduzierung")), key=f"edit_nr_{r['_row_idx']}"
                         )
+                        tone_options = ["None", "Linear", "Medium Soft", "Medium Hard", "Strong"]
+                        tone_default = tone_options.index(r.get("tone_curve")) if r.get("tone_curve") in tone_options else 0
+                        edit_tone = st.selectbox(bilabel("tone_curve"), tone_options, index=tone_default, key=f"edit_tone_{r['_row_idx']}")
+
+                        cc_options = ["Off", "Weak", "Strong"]
+                        cc_default = cc_options.index(r.get("color_chrome")) if r.get("color_chrome") in cc_options else 0
+                        edit_cc = st.selectbox(bilabel("color_chrome"), cc_options, index=cc_default, key=f"edit_cc_{r['_row_idx']}")
                     
+                    edit_bild_url = st.text_input(
+                        bilabel("image_url"),
+                        value=r.get("bild_url", ""),
+                        key=f"edit_bild_url_{r['_row_idx']}"
+                    )
+                    edit_tags = st.text_input(
+                        bilabel("tags"),
+                        value=r.get("tags", ""),
+                        key=f"edit_tags_{r['_row_idx']}"
+                    )
                     edit_notizen = st.text_area(
                         bilabel("notes"),
                         value=r.get("notizen", ""),
@@ -640,7 +843,11 @@ with tab1:
                             if not edit_name:
                                 st.error(t["enter_name"])
                             else:
-                                updated_data = {
+                                updated_data = r.copy()
+                                for k in list(updated_data.keys()):
+                                    if k.startswith("_"):
+                                        del updated_data[k]
+                                updated_data.update({
                                     "name": edit_name,
                                     "kategorie": edit_kategorie,
                                     "film_simulation": " / ".join(edit_film_sim) if isinstance(edit_film_sim, list) else edit_film_sim,
@@ -652,15 +859,20 @@ with tab1:
                                     "farbe": edit_farbe,
                                     "schaerfe": edit_schaerfe,
                                     "rauschreduzierung": edit_nr,
+                                    "grain": edit_grain,
+                                    "tone_curve": edit_tone,
+                                    "color_chrome": edit_cc,
+                                    "bild_url": edit_bild_url,
+                                    "tags": edit_tags,
                                     "notizen": edit_notizen,
                                     "quelle": edit_quelle,
                                     "datum": r.get("datum", datetime.now().strftime("%d.%m.%Y %H:%M")),
-                                }
+                                })
                                 if update_rezept(r["_row_idx"], updated_data, t):
                                     st.success(t["recipe_updated"].format(name=edit_name))
                                     if "edit_recipe_idx" in st.session_state:
                                         del st.session_state["edit_recipe_idx"]
-                                    st.cache_resource.clear()
+                                    st.cache_data.clear()
                                     st.rerun()
                     with col_cancel:
                         cancel_submitted = st.form_submit_button(t["cancel"])
@@ -669,21 +881,54 @@ with tab1:
                                 del st.session_state["edit_recipe_idx"]
                             st.rerun()
             else:
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.markdown(f"**{bilabel('film_simulation')}:** {r.get('film_simulation', '-')}")
-                    st.markdown(f"**{bilabel('white_balance')}:** {r.get('weissabgleich', '-')}")
-                    st.markdown(f"**{bilabel('wb_shift')}:** {r.get('wb_shift', '-')}")
-                    st.markdown(f"**{bilabel('dynamic_range')}:** {r.get('dynamikbereich', '-')}")
-                with col2:
-                    st.markdown(f"**{bilabel('highlights')}:** {r.get('lichter', '-')}")
-                    st.markdown(f"**{bilabel('shadows')}:** {r.get('schatten', '-')}")
-                    st.markdown(f"**{bilabel('color')}:** {r.get('farbe', '-')}")
-                with col3:
-                    st.markdown(f"**{bilabel('sharpness')}:** {r.get('schaerfe', '-')}")
-                    st.markdown(f"**{bilabel('noise_reduction')}:** {r.get('rauschreduzierung', '-')}")
-                    if r.get("quelle"):
-                        st.markdown(f"**{bilabel('source')}:** [{r.get('quelle')}]({r.get('quelle')})")
+                # Layout checking: If there is an image, split in two columns
+                if r.get("bild_url"):
+                    col_img, col_params = st.columns([1, 2])
+                    with col_img:
+                        st.image(r["bild_url"], use_container_width=True)
+                    with col_params:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.markdown(f"**{bilabel('film_simulation')}:** {r.get('film_simulation', '-')}")
+                            st.markdown(f"**{bilabel('white_balance')}:** {r.get('weissabgleich', '-')}")
+                            st.markdown(f"**{bilabel('wb_shift')}:** {r.get('wb_shift', '-')}")
+                            st.markdown(f"**{bilabel('dynamic_range')}:** {r.get('dynamikbereich', '-')}")
+                        with col2:
+                            st.markdown(f"**{bilabel('highlights')}:** {r.get('lichter', '-')}")
+                            st.markdown(f"**{bilabel('shadows')}:** {r.get('schatten', '-')}")
+                            st.markdown(f"**{bilabel('color')}:** {r.get('farbe', '-')}")
+                        with col3:
+                            st.markdown(f"**{bilabel('sharpness')}:** {r.get('schaerfe', '-')}")
+                            st.markdown(f"**{bilabel('noise_reduction')}:** {r.get('rauschreduzierung', '-')}")
+                            st.markdown(f"**{bilabel('grain')}:** {r.get('grain', '-')}")
+                            st.markdown(f"**{bilabel('tone_curve')}:** {r.get('tone_curve', '-')}")
+                            st.markdown(f"**{bilabel('color_chrome')}:** {r.get('color_chrome', '-')}")
+                            if r.get("quelle"):
+                                st.markdown(f"**{bilabel('source')}:** [{r.get('quelle')}]({r.get('quelle')})")
+                else:
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"**{bilabel('film_simulation')}:** {r.get('film_simulation', '-')}")
+                        st.markdown(f"**{bilabel('white_balance')}:** {r.get('weissabgleich', '-')}")
+                        st.markdown(f"**{bilabel('wb_shift')}:** {r.get('wb_shift', '-')}")
+                        st.markdown(f"**{bilabel('dynamic_range')}:** {r.get('dynamikbereich', '-')}")
+                    with col2:
+                        st.markdown(f"**{bilabel('highlights')}:** {r.get('lichter', '-')}")
+                        st.markdown(f"**{bilabel('shadows')}:** {r.get('schatten', '-')}")
+                        st.markdown(f"**{bilabel('color')}:** {r.get('farbe', '-')}")
+                    with col3:
+                        st.markdown(f"**{bilabel('sharpness')}:** {r.get('schaerfe', '-')}")
+                        st.markdown(f"**{bilabel('noise_reduction')}:** {r.get('rauschreduzierung', '-')}")
+                        st.markdown(f"**{bilabel('grain')}:** {r.get('grain', '-')}")
+                        st.markdown(f"**{bilabel('tone_curve')}:** {r.get('tone_curve', '-')}")
+                        st.markdown(f"**{bilabel('color_chrome')}:** {r.get('color_chrome', '-')}")
+                        if r.get("quelle"):
+                            st.markdown(f"**{bilabel('source')}:** [{r.get('quelle')}]({r.get('quelle')})")
+
+                # Tags display as code badges
+                tags_list = [tag.strip() for tag in r.get("tags", "").split(",") if tag.strip()]
+                if tags_list:
+                    st.markdown(" ".join([f"`#{tag}`" for tag in tags_list]))
 
                 if r.get("notizen"):
                     st.info(t["note_label"].format(note=r.get("notizen")))
@@ -701,7 +946,7 @@ with tab1:
                                 st.success(t["deleted"])
                                 if "delete_confirm_idx" in st.session_state:
                                     del st.session_state["delete_confirm_idx"]
-                                st.cache_resource.clear()
+                                st.cache_data.clear()
                                 st.rerun()
                     with col_no:
                         if st.button(t["cancel"], key=f"cancel_del_{i}"):
@@ -719,7 +964,7 @@ with tab1:
                                 if k.startswith("_"):
                                     del updated_rezept[k]
                             if update_rezept(r["_row_idx"], updated_rezept, t):
-                                st.cache_resource.clear()
+                                st.cache_data.clear()
                                 st.rerun()
                     with col_btn2:
                         if st.button(t["edit"], key=f"edit_btn_{i}"):
@@ -806,6 +1051,9 @@ with tab2:
                 value=scraped.get("wb_shift", ""),
                 placeholder=t["wb_shift_placeholder"],
             )
+            grain_options = ["Off", "Weak", "Strong"]
+            grain_default = grain_options.index(scraped.get("grain")) if scraped.get("grain") in grain_options else 0
+            grain = st.selectbox(bilabel("grain"), grain_options, index=grain_default)
 
         with col2:
             dr_options = ["DR100", "DR200", "DR400", "Auto"]
@@ -832,7 +1080,24 @@ with tab2:
             rauschreduzierung = st.slider(
                 bilabel("noise_reduction"), -4, 4, scraped.get("rauschreduzierung", 0)
             )
+            tone_options = ["None", "Linear", "Medium Soft", "Medium Hard", "Strong"]
+            tone_default = tone_options.index(scraped.get("tone_curve")) if scraped.get("tone_curve") in tone_options else 0
+            tone_curve = st.selectbox(bilabel("tone_curve"), tone_options, index=tone_default)
 
+            cc_options = ["Off", "Weak", "Strong"]
+            cc_default = cc_options.index(scraped.get("color_chrome")) if scraped.get("color_chrome") in cc_options else 0
+            color_chrome = st.selectbox(bilabel("color_chrome"), cc_options, index=cc_default)
+
+        bild_url = st.text_input(
+            bilabel("image_url"),
+            value=scraped.get("bild_url", ""),
+            placeholder=t["image_url_placeholder"],
+        )
+        tags = st.text_input(
+            bilabel("tags"),
+            value=scraped.get("tags", ""),
+            placeholder=t["tags_placeholder"],
+        )
         notizen = st.text_area(
             bilabel("notes"), placeholder=t["notes_placeholder"]
         )
@@ -863,6 +1128,11 @@ with tab2:
                     "farbe": farbe,
                     "schaerfe": schaerfe,
                     "rauschreduzierung": rauschreduzierung,
+                    "grain": grain,
+                    "tone_curve": tone_curve,
+                    "color_chrome": color_chrome,
+                    "bild_url": bild_url,
+                    "tags": tags,
                     "notizen": notizen,
                     "quelle": quelle,
                     "datum": datetime.now().strftime("%d.%m.%Y %H:%M"),
@@ -871,5 +1141,5 @@ with tab2:
                     st.success(t["recipe_saved"].format(name=name))
                     if "scraped_data" in st.session_state:
                         del st.session_state["scraped_data"]
-                    st.cache_resource.clear()
+                    st.cache_data.clear()
                     st.rerun()
