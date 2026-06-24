@@ -47,11 +47,16 @@ LANGS = {
         "no_recipes_yet": "Noch keine Rezepte gespeichert. Füge unten dein erstes Rezept hinzu!",
         "enter_url": "Bitte eine URL eingeben.",
         "enter_name": "Bitte einen Rezeptnamen eingeben!",
+        "duplicate_warning": "Achtung: Ein Rezept mit diesem Namen existiert bereits.",
         "delete": "Löschen",
         "deleted": "Rezept gelöscht!",
         "saved_recipes": "Gespeicherte Rezepte",
         "recipes_found": "{count} Rezept(e) gefunden",
         "filter": "Filter",
+        "search": "Suche",
+        "search_placeholder": "Rezeptname oder Notiz...",
+        "sort": "Sortierung",
+        "sort_options": ["Neueste zuerst", "Älteste zuerst", "Name A-Z", "Name Z-A"],
         "unknown": "Unbekannt",
         "saved_on": "Gespeichert am: {date}",
         "note_label": "Notiz: {note}",
@@ -62,6 +67,24 @@ LANGS = {
         "confirm_delete": "Bist du sicher, dass du das Rezept '{name}' löschen möchtest?",
         "yes_delete": "Ja, löschen",
         "cancel": "Abbrechen",
+        "edit": "Bearbeiten",
+        "save_changes": "Änderungen speichern",
+        "recipe_updated": "Rezept '{name}' erfolgreich aktualisiert!",
+        "cat_architektur": "Architektur",
+        "cat_portraet": "Porträt",
+        "cat_street": "Street",
+        "cat_reise": "Reise",
+        "cat_landschaft": "Landschaft",
+        "cat_allgemein": "Allgemein",
+        "scraper_note": "Hinweis: Der automatische Import liest die Webseite von FujiXWeekly aus. Falls sich das dortige Layout ändert, kann es sein, dass einige Parameter nicht korrekt erkannt werden. Bitte überprüfe die Werte nach dem Import.",
+        "download_csv": "Rezepte als CSV exportieren",
+        "csv_filename": "fuji_xt2_rezepte.csv",
+        "compare": "Vergleichen",
+        "comparison": "Rezept-Vergleich",
+        "clear_comparison": "Vergleich leeren",
+        "max_compare_warning": "Du kannst maximal 3 Rezepte gleichzeitig vergleichen.",
+        "only_favorites": "Nur Favoriten",
+        "favorite": "Favorit",
     },
     "en": {
         "title": "Fuji X-T2 Recipe Management",
@@ -99,11 +122,16 @@ LANGS = {
         "no_recipes_yet": "No recipes saved yet. Add your first recipe below!",
         "enter_url": "Please enter a URL.",
         "enter_name": "Please enter a recipe name!",
+        "duplicate_warning": "Warning: A recipe with this name already exists.",
         "delete": "Delete",
         "deleted": "Recipe deleted!",
         "saved_recipes": "Saved Recipes",
         "recipes_found": "{count} recipe(s) found",
         "filter": "Filter",
+        "search": "Search",
+        "search_placeholder": "Recipe name or note...",
+        "sort": "Sorting",
+        "sort_options": ["Newest first", "Oldest first", "Name A-Z", "Name Z-A"],
         "unknown": "Unknown",
         "saved_on": "Saved on: {date}",
         "note_label": "Note: {note}",
@@ -114,6 +142,24 @@ LANGS = {
         "confirm_delete": "Are you sure you want to delete the recipe '{name}'?",
         "yes_delete": "Yes, delete",
         "cancel": "Cancel",
+        "edit": "Edit",
+        "save_changes": "Save Changes",
+        "recipe_updated": "Recipe '{name}' updated successfully!",
+        "cat_architektur": "Architecture",
+        "cat_portraet": "Portrait",
+        "cat_street": "Street",
+        "cat_reise": "Travel",
+        "cat_landschaft": "Landscape",
+        "cat_allgemein": "General",
+        "scraper_note": "Note: Auto-import reads the FujiXWeekly page layout. If their layout changes, some parameters might not be correctly recognized. Please verify the imported values.",
+        "download_csv": "Export recipes as CSV",
+        "csv_filename": "fuji_xt2_recipes.csv",
+        "compare": "Compare",
+        "comparison": "Recipe Comparison",
+        "clear_comparison": "Clear Comparison",
+        "max_compare_warning": "You can compare a maximum of 3 recipes at once.",
+        "only_favorites": "Only Favorites",
+        "favorite": "Favorite",
     },
 }
 
@@ -130,6 +176,40 @@ def bilabel(key):
         return de
     return f"{de} / {en}"
 
+
+# --- Bilingual Category Support ---
+CAT_MAP = {
+    "Architektur": "cat_architektur",
+    "Porträt": "cat_portraet",
+    "Street": "cat_street",
+    "Reise": "cat_reise",
+    "Landschaft": "cat_landschaft",
+    "Allgemein": "cat_allgemein",
+}
+
+
+def bicat(cat_name):
+    """Return a bilingual representation of a category name."""
+    key = CAT_MAP.get(cat_name)
+    if key:
+        return bilabel(key)
+    return cat_name
+
+
+def convert_to_csv(data_list):
+    """Convert list of dictionaries to a CSV string."""
+    if not data_list:
+        return ""
+    import io
+    import csv
+    headers = [k for k in data_list[0].keys() if not k.startswith("_")]
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";", lineterminator="\n")
+    writer.writerow(headers)
+    for r in data_list:
+        writer.writerow([r.get(h, "") for h in headers])
+    return output.getvalue()
+
 # --- Google Sheets Connection ---
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -138,7 +218,7 @@ SCOPES = [
 SHEET_ID = "1fLh1F5JgKqJYk9Iqryl6JaJjq2jhhPhqmbdqHUjl2j4"
 
 
-@st.cache_resource
+@st.cache_resource(ttl=300)
 def get_sheet():
     creds = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"], scopes=SCOPES
@@ -153,10 +233,30 @@ def load_rezepte(t):
     try:
         sheet = get_sheet()
         data = sheet.get_all_records()
+        for idx, r in enumerate(data):
+            r["_row_idx"] = idx
         return data
     except Exception as e:
         st.error(t["loading_error"].format(error=e))
         return []
+
+
+def update_rezept(index, rezept, t):
+    """Update an existing recipe row in Google Sheets."""
+    try:
+        sheet = get_sheet()
+        headers = sheet.row_values(1)
+        if not headers:
+            return False
+        if "favorit" not in headers:
+            sheet.update_cell(1, len(headers) + 1, "favorit")
+            headers.append("favorit")
+        row = [rezept.get(h, "") for h in headers]
+        sheet.update(range_name=f"A{index + 2}", values=[row])
+        return True
+    except Exception as e:
+        st.error(t["saving_error"].format(error=e))
+        return False
 
 
 def save_rezept(rezept, t):
@@ -169,9 +269,13 @@ def save_rezept(rezept, t):
                 "name", "kategorie", "film_simulation", "weissabgleich",
                 "wb_shift", "dynamikbereich", "lichter", "schatten",
                 "farbe", "schaerfe", "rauschreduzierung", "notizen",
-                "quelle", "datum",
+                "quelle", "datum", "favorit"
             ]
             sheet.append_row(headers)
+        else:
+            if "favorit" not in headers:
+                sheet.update_cell(1, len(headers) + 1, "favorit")
+                headers.append("favorit")
         row = [rezept.get(h, "") for h in headers]
         sheet.append_row(row)
         return True
@@ -323,13 +427,16 @@ st.caption(t["subtitle"])
 
 # --- Sidebar Filter ---
 st.sidebar.header(t["filter"])
+search_query = st.sidebar.text_input(t["search"], placeholder=t["search_placeholder"])
+only_favs = st.sidebar.checkbox(t["only_favorites"], value=False)
+
 rezepte = load_rezepte(t)
 
 alle_kategorien = sorted(
     set(r.get("kategorie", "Allgemein") for r in rezepte)
 ) or ["Allgemein"]
 filter_kat = st.sidebar.multiselect(
-    t["category"], alle_kategorien, default=alle_kategorien
+    t["category"], alle_kategorien, default=alle_kategorien, format_func=bicat
 )
 
 alle_sims = sorted(
@@ -343,68 +450,298 @@ gefiltert = [
     r for r in rezepte
     if r.get("kategorie", "Allgemein") in filter_kat
     and r.get("film_simulation", "") in (filter_sim or alle_sims)
+    and (not only_favs or r.get("favorit", "").strip().lower() == "ja")
+    and (
+        not search_query
+        or search_query.lower() in r.get("name", "").lower()
+        or search_query.lower() in r.get("notizen", "").lower()
+    )
 ]
+
+# --- Sorting ---
+st.sidebar.markdown("---")
+sort_option = st.sidebar.selectbox(t["sort"], t["sort_options"])
+
+# Apply sorting
+def parse_date(date_str):
+    try:
+        return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
+    except (ValueError, TypeError):
+        return datetime.min
+
+sort_idx = t["sort_options"].index(sort_option)
+if sort_idx == 0:  # Newest first
+    gefiltert.sort(key=lambda r: parse_date(r.get("datum", "")), reverse=True)
+elif sort_idx == 1:  # Oldest first
+    gefiltert.sort(key=lambda r: parse_date(r.get("datum", "")))
+elif sort_idx == 2:  # Name A-Z
+    gefiltert.sort(key=lambda r: r.get("name", "").lower())
+elif sort_idx == 3:  # Name Z-A
+    gefiltert.sort(key=lambda r: r.get("name", "").lower(), reverse=True)
+
+# --- Sidebar Export ---
+st.sidebar.markdown("---")
+if gefiltert:
+    csv_data = convert_to_csv(gefiltert)
+    st.sidebar.download_button(
+        label=t["download_csv"],
+        data=csv_data,
+        file_name=t["csv_filename"],
+        mime="text/csv",
+        key="download_csv_btn",
+        use_container_width=True
+    )
 
 # --- Tabs ---
 tab1, tab2 = st.tabs([t["saved_recipes"], t["new_recipe"]])
 
 # ===================== TAB 1: Saved Recipes =====================
 with tab1:
+    if "compare_ids" not in st.session_state:
+        st.session_state["compare_ids"] = []
+
+    # Comparison UI Section
+    compare_ids = st.session_state["compare_ids"]
+    if compare_ids:
+        # Find the actual recipes to compare
+        compare_recipes = [r for r in rezepte if r.get("_row_idx") in compare_ids]
+        if compare_recipes:
+            st.markdown(f"### 📊 {t['comparison']}")
+            cols = st.columns(len(compare_recipes))
+            for col_idx, cr in enumerate(compare_recipes):
+                with cols[col_idx]:
+                    st.markdown(f"#### {cr.get('name', t['unknown'])}")
+                    st.caption(f"{bicat(cr.get('kategorie', ''))} | {cr.get('film_simulation', '')}")
+                    
+                    st.markdown(f"**{bilabel('film_simulation')}:** {cr.get('film_simulation', '-')}")
+                    st.markdown(f"**{bilabel('white_balance')}:** {cr.get('weissabgleich', '-')}")
+                    st.markdown(f"**{bilabel('wb_shift')}:** {cr.get('wb_shift', '-')}")
+                    st.markdown(f"**{bilabel('dynamic_range')}:** {cr.get('dynamikbereich', '-')}")
+                    st.markdown(f"**{bilabel('highlights')}:** {cr.get('lichter', '-')}")
+                    st.markdown(f"**{bilabel('shadows')}:** {cr.get('schatten', '-')}")
+                    st.markdown(f"**{bilabel('color')}:** {cr.get('farbe', '-')}")
+                    st.markdown(f"**{bilabel('sharpness')}:** {cr.get('schaerfe', '-')}")
+                    st.markdown(f"**{bilabel('noise_reduction')}:** {cr.get('rauschreduzierung', '-')}")
+                    if cr.get("notizen"):
+                        st.caption(f"📝 {cr.get('notizen')}")
+                        
+                    # Remove from comparison button
+                    if st.button("❌", key=f"remove_compare_{cr['_row_idx']}"):
+                        st.session_state["compare_ids"].remove(cr["_row_idx"])
+                        st.rerun()
+            
+            if st.button(t["clear_comparison"], key="clear_compare_btn"):
+                st.session_state["compare_ids"] = []
+                st.rerun()
+            st.markdown("---")
+
     st.subheader(t["recipes_found"].format(count=len(gefiltert)))
 
     if not gefiltert:
         st.info(t["no_recipes_yet"])
 
     for i, r in enumerate(gefiltert):
+        is_fav = r.get("favorit", "").strip().lower() == "ja"
+        fav_prefix = "⭐ " if is_fav else ""
         label = (
-            f"{r.get('name', t['unknown'])} | "
-            f"{r.get('kategorie', '')} | "
+            f"{fav_prefix}{r.get('name', t['unknown'])} | "
+            f"{bicat(r.get('kategorie', ''))} | "
             f"{r.get('film_simulation', '')}"
         )
         with st.expander(label):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.markdown(f"**{bilabel('film_simulation')}:** {r.get('film_simulation', '-')}")
-                st.markdown(f"**{bilabel('white_balance')}:** {r.get('weissabgleich', '-')}")
-                st.markdown(f"**{bilabel('wb_shift')}:** {r.get('wb_shift', '-')}")
-                st.markdown(f"**{bilabel('dynamic_range')}:** {r.get('dynamikbereich', '-')}")
-            with col2:
-                st.markdown(f"**{bilabel('highlights')}:** {r.get('lichter', '-')}")
-                st.markdown(f"**{bilabel('shadows')}:** {r.get('schatten', '-')}")
-                st.markdown(f"**{bilabel('color')}:** {r.get('farbe', '-')}")
-            with col3:
-                st.markdown(f"**{bilabel('sharpness')}:** {r.get('schaerfe', '-')}")
-                st.markdown(f"**{bilabel('noise_reduction')}:** {r.get('rauschreduzierung', '-')}")
-                if r.get("quelle"):
-                    st.markdown(f"**{bilabel('source')}:** [{r.get('quelle')}]({r.get('quelle')})")
+            if st.session_state.get("edit_recipe_idx") == r.get("_row_idx"):
+                with st.form(key=f"edit_form_{r['_row_idx']}"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        edit_name = st.text_input(
+                            bilabel("recipe_name") + " *",
+                            value=r.get("name", ""),
+                            key=f"edit_name_{r['_row_idx']}"
+                        )
+                        if edit_name and edit_name.strip().lower() != r.get("name", "").strip().lower():
+                            if any(other.get("name", "").strip().lower() == edit_name.strip().lower() for other in rezepte):
+                                st.warning(t["duplicate_warning"])
+                        edit_kategorie = st.selectbox(
+                            bilabel("category"),
+                            CATEGORY_OPTIONS,
+                            index=CATEGORY_OPTIONS.index(r.get("kategorie", "Allgemein")) if r.get("kategorie") in CATEGORY_OPTIONS else 0,
+                            format_func=bicat,
+                            key=f"edit_kat_{r['_row_idx']}"
+                        )
+                        
+                        current_sims = [s.strip() for s in r.get("film_simulation", "").split("/") if s.strip()]
+                        valid_current_sims = [s for s in current_sims if s in FILM_SIM_OPTIONS]
+                        if not valid_current_sims and FILM_SIM_OPTIONS:
+                            valid_current_sims = [FILM_SIM_OPTIONS[0]]
+                            
+                        edit_film_sim = st.multiselect(
+                            bilabel("film_simulation"),
+                            FILM_SIM_OPTIONS,
+                            default=valid_current_sims,
+                            key=f"edit_sim_{r['_row_idx']}"
+                        )
+                        edit_weissabgleich = st.text_input(
+                            bilabel("white_balance"),
+                            value=r.get("weissabgleich", ""),
+                            key=f"edit_wb_{r['_row_idx']}"
+                        )
+                        edit_wb_shift = st.text_input(
+                            bilabel("wb_shift"),
+                            value=r.get("wb_shift", ""),
+                            key=f"edit_wb_shift_{r['_row_idx']}"
+                        )
+                    with col2:
+                        dr_options = ["DR100", "DR200", "DR400", "Auto"]
+                        dr_default = dr_options.index(r.get("dynamikbereich")) if r.get("dynamikbereich") in dr_options else 0
+                        edit_dr = st.selectbox(
+                            bilabel("dynamic_range"),
+                            dr_options,
+                            index=dr_default,
+                            key=f"edit_dr_{r['_row_idx']}"
+                        )
+                        
+                        def safe_int(val, default=0):
+                            try:
+                                return int(float(val))
+                            except (ValueError, TypeError):
+                                return default
+                                
+                        edit_lichter = st.slider(
+                            bilabel("highlights"), -2, 4, safe_int(r.get("lichter")), key=f"edit_hl_{r['_row_idx']}"
+                        )
+                        edit_schatten = st.slider(
+                            bilabel("shadows"), -2, 4, safe_int(r.get("schatten")), key=f"edit_sh_{r['_row_idx']}"
+                        )
+                        edit_farbe = st.slider(
+                            bilabel("color"), -4, 4, safe_int(r.get("farbe")), key=f"edit_col_{r['_row_idx']}"
+                        )
+                        edit_schaerfe = st.slider(
+                            bilabel("sharpness"), -4, 4, safe_int(r.get("schaerfe")), key=f"edit_sharp_{r['_row_idx']}"
+                        )
+                        edit_nr = st.slider(
+                            bilabel("noise_reduction"), -4, 4, safe_int(r.get("rauschreduzierung")), key=f"edit_nr_{r['_row_idx']}"
+                        )
+                    
+                    edit_notizen = st.text_area(
+                        bilabel("notes"),
+                        value=r.get("notizen", ""),
+                        key=f"edit_notes_{r['_row_idx']}"
+                    )
+                    edit_quelle = st.text_input(
+                        bilabel("source"),
+                        value=r.get("quelle", ""),
+                        key=f"edit_source_{r['_row_idx']}"
+                    )
+                    
+                    col_save, col_cancel = st.columns(2)
+                    with col_save:
+                        save_submitted = st.form_submit_button(t["save_changes"])
+                        if save_submitted:
+                            if not edit_name:
+                                st.error(t["enter_name"])
+                            else:
+                                updated_data = {
+                                    "name": edit_name,
+                                    "kategorie": edit_kategorie,
+                                    "film_simulation": " / ".join(edit_film_sim) if isinstance(edit_film_sim, list) else edit_film_sim,
+                                    "weissabgleich": edit_weissabgleich,
+                                    "wb_shift": edit_wb_shift,
+                                    "dynamikbereich": edit_dr,
+                                    "lichter": edit_lichter,
+                                    "schatten": edit_schatten,
+                                    "farbe": edit_farbe,
+                                    "schaerfe": edit_schaerfe,
+                                    "rauschreduzierung": edit_nr,
+                                    "notizen": edit_notizen,
+                                    "quelle": edit_quelle,
+                                    "datum": r.get("datum", datetime.now().strftime("%d.%m.%Y %H:%M")),
+                                }
+                                if update_rezept(r["_row_idx"], updated_data, t):
+                                    st.success(t["recipe_updated"].format(name=edit_name))
+                                    if "edit_recipe_idx" in st.session_state:
+                                        del st.session_state["edit_recipe_idx"]
+                                    st.cache_resource.clear()
+                                    st.rerun()
+                    with col_cancel:
+                        cancel_submitted = st.form_submit_button(t["cancel"])
+                        if cancel_submitted:
+                            if "edit_recipe_idx" in st.session_state:
+                                del st.session_state["edit_recipe_idx"]
+                            st.rerun()
+            else:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown(f"**{bilabel('film_simulation')}:** {r.get('film_simulation', '-')}")
+                    st.markdown(f"**{bilabel('white_balance')}:** {r.get('weissabgleich', '-')}")
+                    st.markdown(f"**{bilabel('wb_shift')}:** {r.get('wb_shift', '-')}")
+                    st.markdown(f"**{bilabel('dynamic_range')}:** {r.get('dynamikbereich', '-')}")
+                with col2:
+                    st.markdown(f"**{bilabel('highlights')}:** {r.get('lichter', '-')}")
+                    st.markdown(f"**{bilabel('shadows')}:** {r.get('schatten', '-')}")
+                    st.markdown(f"**{bilabel('color')}:** {r.get('farbe', '-')}")
+                with col3:
+                    st.markdown(f"**{bilabel('sharpness')}:** {r.get('schaerfe', '-')}")
+                    st.markdown(f"**{bilabel('noise_reduction')}:** {r.get('rauschreduzierung', '-')}")
+                    if r.get("quelle"):
+                        st.markdown(f"**{bilabel('source')}:** [{r.get('quelle')}]({r.get('quelle')})")
 
-            if r.get("notizen"):
-                st.info(t["note_label"].format(note=r.get("notizen")))
-            if r.get("datum"):
-                st.caption(t["saved_on"].format(date=r.get("datum")))
+                if r.get("notizen"):
+                    st.info(t["note_label"].format(note=r.get("notizen")))
+                if r.get("datum"):
+                    st.caption(t["saved_on"].format(date=r.get("datum")))
 
-            # Delete confirmation logic
-            if st.session_state.get("delete_confirm_idx") == i:
-                st.warning(t["confirm_delete"].format(name=r.get("name", t["unknown"])))
-                col_yes, col_no = st.columns(2)
-                with col_yes:
-                    if st.button(t["yes_delete"], key=f"yes_del_{i}", type="primary"):
-                        real_index = rezepte.index(r)
-                        if delete_rezept(real_index, t):
-                            st.success(t["deleted"])
+                # Delete and Edit buttons / confirmation logic
+                if st.session_state.get("delete_confirm_idx") == i:
+                    st.warning(t["confirm_delete"].format(name=r.get("name", t["unknown"])))
+                    col_yes, col_no = st.columns(2)
+                    with col_yes:
+                        if st.button(t["yes_delete"], key=f"yes_del_{i}", type="primary"):
+                            real_index = r.get("_row_idx")
+                            if real_index is not None and delete_rezept(real_index, t):
+                                st.success(t["deleted"])
+                                if "delete_confirm_idx" in st.session_state:
+                                    del st.session_state["delete_confirm_idx"]
+                                st.cache_resource.clear()
+                                st.rerun()
+                    with col_no:
+                        if st.button(t["cancel"], key=f"cancel_del_{i}"):
                             if "delete_confirm_idx" in st.session_state:
                                 del st.session_state["delete_confirm_idx"]
-                            st.cache_resource.clear()
                             st.rerun()
-                with col_no:
-                    if st.button(t["cancel"], key=f"cancel_del_{i}"):
-                        if "delete_confirm_idx" in st.session_state:
-                            del st.session_state["delete_confirm_idx"]
-                        st.rerun()
-            else:
-                if st.button(t["delete"], key=f"del_{i}"):
-                    st.session_state["delete_confirm_idx"] = i
-                    st.rerun()
+                else:
+                    col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1, 1, 1, 4])
+                    with col_btn1:
+                        fav_label = "⭐" if is_fav else "☆"
+                        if st.button(fav_label, key=f"fav_btn_{i}"):
+                            updated_rezept = r.copy()
+                            updated_rezept["favorit"] = "" if is_fav else "ja"
+                            for k in list(updated_rezept.keys()):
+                                if k.startswith("_"):
+                                    del updated_rezept[k]
+                            if update_rezept(r["_row_idx"], updated_rezept, t):
+                                st.cache_resource.clear()
+                                st.rerun()
+                    with col_btn2:
+                        if st.button(t["edit"], key=f"edit_btn_{i}"):
+                            st.session_state["edit_recipe_idx"] = r["_row_idx"]
+                            st.rerun()
+                    with col_btn3:
+                        if st.button(t["delete"], key=f"del_{i}"):
+                            st.session_state["delete_confirm_idx"] = i
+                            st.rerun()
+                    with col_btn4:
+                        is_compared = r["_row_idx"] in st.session_state.get("compare_ids", [])
+                        if st.checkbox(t["compare"], value=is_compared, key=f"comp_check_{r['_row_idx']}"):
+                            if r["_row_idx"] not in st.session_state.get("compare_ids", []):
+                                if len(st.session_state.get("compare_ids", [])) >= 3:
+                                    st.error(t["max_compare_warning"])
+                                else:
+                                    st.session_state["compare_ids"].append(r["_row_idx"])
+                                    st.rerun()
+                        else:
+                            if r["_row_idx"] in st.session_state.get("compare_ids", []):
+                                st.session_state["compare_ids"].remove(r["_row_idx"])
+                                st.rerun()
 
 # ===================== TAB 2: New Recipe =====================
 with tab2:
@@ -415,6 +752,7 @@ with tab2:
     url_input = st.text_input(
         t["url_input"], placeholder=t["source_placeholder"]
     )
+    st.caption(t["scraper_note"])
 
     if st.button(t["url_button"]):
         if url_input:
@@ -444,7 +782,9 @@ with tab2:
                 value=scraped.get("name", ""),
                 placeholder=t["recipe_name_placeholder"],
             )
-            kategorie = st.selectbox(bilabel("category"), CATEGORY_OPTIONS)
+            if name and any(r.get("name", "").strip().lower() == name.strip().lower() for r in rezepte):
+                st.warning(t["duplicate_warning"])
+            kategorie = st.selectbox(bilabel("category"), CATEGORY_OPTIONS, format_func=bicat)
 
             film_sim_default_idx = next(
                 (i for i, opt in enumerate(FILM_SIM_OPTIONS)
