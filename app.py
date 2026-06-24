@@ -190,6 +190,18 @@ def scrape_fujixweekly(url):
         return None, str(e)
 
 # --- App Layout ---
+
+# Language selector
+if 'lang' not in st.session_state:
+    st.session_state['lang'] = 'de'
+
+col_lang1, col_lang2 = st.columns([6, 1])
+with col_lang2:
+    lang = st.selectbox("🌐", ["de", "en"], index=0 if st.session_state['lang'] == 'de' else 1, label_visibility="collapsed")
+    st.session_state['lang'] = lang
+
+t = LANGS[st.session_state['lang']]
+
 st.set_page_config(page_title="Fuji X-T2 Rezepte", layout="wide", page_icon="camera")
 st.title("Fuji X-T2 Film Simulation Rezepte")
 st.caption("Deine persoenliche Rezept-Datenbank | gespeichert in Google Sheets")
