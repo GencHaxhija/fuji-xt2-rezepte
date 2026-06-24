@@ -7,6 +7,68 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
+# --- Language Support ---
+LANGS = {
+    "de": {
+        "title": "Fuji X-T2 Rezeptverwaltung",
+        "recipe_data": "Rezeptdaten (manuell oder aus URL)",
+        "recipe_name": "Rezeptname",
+        "category": "Kategorie",
+        "film_simulation": "Film Simulation",
+        "white_balance": "Weissabgleich",
+        "wb_shift": "WB Shift (R/B)",
+        "dynamic_range": "Dynamikbereich",
+        "highlights": "Lichter",
+        "shadows": "Schatten",
+        "color": "Farbe",
+        "sharpness": "Schärfe",
+        "noise_reduction": "Rauschreduzierung",
+        "notes": "Notizen",
+        "source": "Quelle (URL)",
+        "save_recipe": "Rezept speichern",
+        "recipe_saved": "Rezept gespeichert!",
+        "new_recipe": "Neues Rezept speichern",
+        "url_import": "Automatisch von FujiXWeekly importieren",
+        "url_input": "FujiXWeekly URL",
+        "load_recipe": "Lade Rezept...",
+        "scraping_error": "Fehler beim Auslesen",
+        "recipe_read": "Rezept ausgelesen! Prüfe die Werte unten und passe sie bei Bedarf an.",
+        "no_data": "Keine Daten gefunden. Bitte manuell eingeben.",
+        "enter_url": "Bitte eine URL eingeben.",
+        "delete": "Loeschen",
+        "saved_recipes": "Gespeicherte Rezepte"
+    },
+    "en": {
+        "title": "Fuji X-T2 Recipe Management",
+        "recipe_data": "Recipe Data (manual or from URL)",
+        "recipe_name": "Recipe Name",
+        "category": "Category",
+        "film_simulation": "Film Simulation",
+        "white_balance": "White Balance",
+        "wb_shift": "WB Shift (R/B)",
+        "dynamic_range": "Dynamic Range",
+        "highlights": "Highlights",
+        "shadows": "Shadows",
+        "color": "Color",
+        "sharpness": "Sharpness",
+        "noise_reduction": "Noise Reduction",
+        "notes": "Notes",
+        "source": "Source (URL)",
+        "save_recipe": "Save Recipe",
+        "recipe_saved": "Recipe saved!",
+        "new_recipe": "Save New Recipe",
+        "url_import": "Auto-import from FujiXWeekly",
+        "url_input": "FujiXWeekly URL",
+        "load_recipe": "Loading recipe...",
+        "scraping_error": "Error during scraping",
+        "recipe_read": "Recipe read! Check and adjust values if needed.",
+        "no_data": "No data found. Please enter manually.",
+        "enter_url": "Please enter a URL.",
+        "delete": "Delete",
+        "saved_recipes": "Saved Recipes"
+    }
+}
+
 # --- Google Sheets Verbindung ---
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -149,11 +211,22 @@ gefiltert = [
 ]
 
 # --- Rezepte anzeigen ---
-tab1, tab2 = st.tabs(["Rezepte ansehen", "Neues Rezept hinzufuegen"])
-
+tab1, tab2 = st.tabs([t["saved_recipes"], t["new_recipe"]])
 with tab1:
     st.subheader(f"{len(gefiltert)} Rezept(e) gefunden")
     if not gefiltert:
+
+        # Language selector
+if 'lang' not in st.session_state:
+    st.session_state['lang'] = 'de'
+
+col_lang1, col_lang2 = st.columns([6, 1])
+with col_lang2:
+    lang = st.selectbox("🌐", ["de", "en"], index=0 if st.session_state['lang'] == 'de' else 1, label_visibility="collapsed")
+    st.session_state['lang'] = lang
+
+t = LANGS[st.session_state['lang']]
+
         st.info("Noch keine Rezepte gespeichert. Fuege unten dein erstes Rezept hinzu!")
     for i, r in enumerate(gefiltert):
         with st.expander(f"{r.get('name','Unbekannt')} | {r.get('kategorie','')} | {r.get('film_simulation','')} "):
@@ -184,8 +257,7 @@ with tab1:
                     st.rerun()
 
 with tab2:
-    st.subheader("Neues Rezept speichern")
-    
+    st.subheader(t["new_recipe"])    
     # URL Import Sektion
     st.markdown("#### Automatisch von FujiXWeekly importieren")
     url_input = st.text_input("FujiXWeekly URL", placeholder="https://fujixweekly.com/...")
@@ -222,8 +294,7 @@ with tab2:
                 "Sepia", "Eterna/Cinema"
             ]
             film_sim_default = next((i for i, opt in enumerate(film_sim_options) if scraped.get('film_simulation','').lower() in opt.lower()), 0)
-            film_sim = st.selectbox("Film Simulation", film_sim_options, index=film_sim_default)
-            weissabgleich = st.text_input("Weissabgleich", value=scraped.get('weissabgleich', ''), placeholder="z.B. Tageslicht oder 5200K")
+    film_sim = st.multiselect("Film Simulation", film_sim_options, default=[film_sim_options[film_sim_default]] if film_sim_default >= 0 and film_sim_default < len(film_sim_options) else [])            weissabgleich = st.text_input("Weissabgleich", value=scraped.get('weissabgleich', ''), placeholder="z.B. Tageslicht oder 5200K")
             wb_shift = st.text_input("WB Shift (R/B)", value=scraped.get('wb_shift', ''), placeholder="z.B. R+3, B-2")
         with col2:
             dr_options = ["DR100", "DR200", "DR400", "Auto"]
@@ -244,8 +315,7 @@ with tab2:
                 neues_rezept = {
                     "name": name,
                     "kategorie": kategorie,
-                    "film_simulation": film_sim,
-                    "weissabgleich": weissabgleich,
+                "film_simulation": " / ".join(film_sim) if isinstance(film_sim, list) else film_sim,                    "weissabgleich": weissabgleich,
                     "wb_shift": wb_shift,
                     "dynamikbereich": dynamikbereich,
                     "lichter": lichter,
