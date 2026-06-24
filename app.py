@@ -3,6 +3,9 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
+import requests
+from bs4 import BeautifulSoup
+import re
 
 # --- Google Sheets Verbindung ---
 SCOPES = [
@@ -42,7 +45,8 @@ def save_rezept(rezept):
         row = [rezept.get(h, "") for h in headers]
         sheet.append_row(row)
         return True
-    except Exception as e:
+    120
+    as e:
         st.error(f"Fehler beim Speichern: {e}")
         return False
 
@@ -54,6 +58,75 @@ def delete_rezept(index):
     except Exception as e:
         st.error(f"Fehler beim Loeschen: {e}")
         return False
+
+# --- URL Scraping Funktion ---
+def scrape_fujixweekly(url):
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        content = soup.get_text()
+        
+        data = {}
+        
+        # Rezeptname aus Titel
+        title = soup.find('title')
+        if title:
+            data['name'] = title.get_text().split('|')[0].strip()
+        
+        # Film Simulation
+        film_sims = ["Provia", "Standard", "Velvia", "Vivid", "Astia", "Soft",
+                     "Classic Chrome", "PRO Neg", "Acros", "Monochrome", "Sepia", "Eterna"]
+        for sim in film_sims:
+            if re.search(rf"Film Simulation[:\s]+{sim}", content, re.IGNORECASE):
+                data['film_simulation'] = sim
+                break
+        
+        # Dynamikbereich
+        dr_match = re.search(r"(DR|Dynamic Range)[:\s]+(DR)?([0-9]+)", content, re.IGNORECASE)
+        if dr_match:
+            dr_val = dr_match.group(3)
+            data['dynamikbereich'] = f"DR{dr_val}"
+        
+        # Weissabgleich
+        wb_match = re.search(r"(White Balance|Weissabgleich)[:\s]+([A-Za-z0-9\s]+)", content, re.IGNORECASE)
+        if wb_match:
+            data['weissabgleich'] = wb_match.group(2).strip()
+        
+        # WB Shift
+        wb_shift_match = re.search(r"(WB Shift|White Balance Shift)[:\s]+([RB][-+0-9\s,]+)", content, re.IGNORECASE)
+        if wb_shift_match:
+            data['wb_shift'] = wb_shift_match.group(2).strip()
+        
+        # Highlight / Lichter
+        hl_match = re.search(r"(Highlight|Tone)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+        if hl_match:
+            data['lichter'] = int(hl_match.group(2))
+        
+        # Shadow / Schatten
+        sh_match = re.search(r"Shadow[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+        if sh_match:
+            data['schatten'] = int(sh_match.group(2))
+        
+        # Farbe / Color
+        col_match = re.search(r"(Color|Farbe)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+        if col_match:
+            data['farbe'] = int(col_match.group(2))
+        
+        # Schaerfe / Sharpness
+        sharp_match = re.search(r"(Sharpness|Schaerfe)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+        if sharp_match:
+            data['schaerfe'] = int(sharp_match.group(2))
+        
+        # Rauschreduzierung / Noise Reduction
+        nr_match = re.search(r"(Noise Reduction|Rauschreduzierung)[:\s]+([+-]?[0-9])", content, re.IGNORECASE)
+        if nr_match:
+            data['rauschreduzierung'] = int(nr_match.group(2))
+        
+        data['quelle'] = url
+        return data, None
+    except Exception as e:
+        return None, str(e)
 
 # --- App Layout ---
 st.set_page_config(page_title="Fuji X-T2 Rezepte", layout="wide", page_icon="camera")
@@ -113,29 +186,57 @@ with tab1:
 
 with tab2:
     st.subheader("Neues Rezept speichern")
+    
+    # URL Import Sektion
+    st.markdown("#### Automatisch von FujiXWeekly importieren")
+    url_input = st.text_input("FujiXWeekly URL", placeholder="https://fujixweekly.com/...")
+    if st.button("Von URL auslesen"):
+        if url_input:
+            with st.spinner("Lade Rezept..."):
+                scraped_data, error = scrape_fujixweekly(url_input)
+                if error:
+                    st.error(f"Fehler beim Auslesen: {error}")
+                elif scraped_data:
+                    st.session_state['scraped_data'] = scraped_data
+                    st.success("Rezept ausgelesen! Pruefe die Werte unten und passe sie bei Bedarf an.")
+                else:
+                    st.warning("Keine Daten gefunden. Bitte manuell eingeben.")
+        else:
+            st.warning("Bitte eine URL eingeben.")
+    
+    st.markdown("---")
+    st.markdown("#### Rezeptdaten (manuell oder aus URL)")
+    
+    # Vorausfuellen wenn scraping erfolgreich
+    scraped = st.session_state.get('scraped_data', {})
+    
     with st.form("rezept_form"):
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("Rezeptname *", placeholder="z.B. Mein Classic Chrome Look")
+            name = st.text_input("Rezeptname *", value=scraped.get('name', ''), placeholder="z.B. Mein Classic Chrome Look")
             kategorie = st.selectbox("Kategorie", ["Architektur", "Portraet", "Street", "Reise", "Landschaft", "Allgemein"])
-            film_sim = st.selectbox("Film Simulation", [
+            film_sim_options = [
                 "Provia/Standard", "Velvia/Vivid", "Astia/Soft",
                 "Classic Chrome", "PRO Neg. Hi", "PRO Neg. Std",
                 "Acros", "Acros+R", "Acros+G", "Acros+Ye",
                 "Monochrome", "Monochrome+R", "Monochrome+G", "Monochrome+Ye",
                 "Sepia", "Eterna/Cinema"
-            ])
-            weissabgleich = st.text_input("Weissabgleich", placeholder="z.B. Tageslicht oder 5200K")
-            wb_shift = st.text_input("WB Shift (R/B)", placeholder="z.B. R+3, B-2")
+            ]
+            film_sim_default = next((i for i, opt in enumerate(film_sim_options) if scraped.get('film_simulation','').lower() in opt.lower()), 0)
+            film_sim = st.selectbox("Film Simulation", film_sim_options, index=film_sim_default)
+            weissabgleich = st.text_input("Weissabgleich", value=scraped.get('weissabgleich', ''), placeholder="z.B. Tageslicht oder 5200K")
+            wb_shift = st.text_input("WB Shift (R/B)", value=scraped.get('wb_shift', ''), placeholder="z.B. R+3, B-2")
         with col2:
-            dynamikbereich = st.selectbox("Dynamikbereich", ["DR100", "DR200", "DR400", "Auto"])
-            lichter = st.slider("Lichter", -2, 4, 0)
-            schatten = st.slider("Schatten", -2, 4, 0)
-            farbe = st.slider("Farbe", -4, 4, 0)
-            schaerfe = st.slider("Schaerfe", -4, 4, 0)
-            rauschreduzierung = st.slider("Rauschreduzierung", -4, 4, 0)
+            dr_options = ["DR100", "DR200", "DR400", "Auto"]
+            dr_default = next((i for i, opt in enumerate(dr_options) if scraped.get('dynamikbereich','') == opt), 0)
+            dynamikbereich = st.selectbox("Dynamikbereich", dr_options, index=dr_default)
+            lichter = st.slider("Lichter", -2, 4, scraped.get('lichter', 0))
+            schatten = st.slider("Schatten", -2, 4, scraped.get('schatten', 0))
+            farbe = st.slider("Farbe", -4, 4, scraped.get('farbe', 0))
+            schaerfe = st.slider("Schaerfe", -4, 4, scraped.get('schaerfe', 0))
+            rauschreduzierung = st.slider("Rauschreduzierung", -4, 4, scraped.get('rauschreduzierung', 0))
         notizen = st.text_area("Notizen", placeholder="z.B. Ideal fuer goldene Stunde")
-        quelle = st.text_input("Quelle (URL)", placeholder="https://fujixweekly.com/...")
+        quelle = st.text_input("Quelle (URL)", value=scraped.get('quelle', url_input or ''), placeholder="https://fujixweekly.com/...")
         submitted = st.form_submit_button("Rezept speichern")
         if submitted:
             if not name:
@@ -159,5 +260,7 @@ with tab2:
                 }
                 if save_rezept(neues_rezept):
                     st.success(f"Rezept '{name}' erfolgreich gespeichert!")
+                    if 'scraped_data' in st.session_state:
+                        del st.session_state['scraped_data']
                     st.cache_resource.clear()
                     st.rerun()
