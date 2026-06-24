@@ -111,6 +111,19 @@ LANGS = {
     },
 }
 
+
+def bilabel(key):
+    """Return a dual-language label like 'Weissabgleich / White Balance'.
+
+    If both languages have the same text (e.g. 'Film Simulation'), the
+    label is shown only once to avoid redundancy.
+    """
+    de = LANGS["de"][key]
+    en = LANGS["en"][key]
+    if de == en:
+        return de
+    return f"{de} / {en}"
+
 # --- Google Sheets Connection ---
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -345,19 +358,19 @@ with tab1:
         with st.expander(label):
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.markdown(f"**{t['film_simulation']}:** {r.get('film_simulation', '-')}")
-                st.markdown(f"**{t['white_balance']}:** {r.get('weissabgleich', '-')}")
-                st.markdown(f"**{t['wb_shift']}:** {r.get('wb_shift', '-')}")
-                st.markdown(f"**{t['dynamic_range']}:** {r.get('dynamikbereich', '-')}")
+                st.markdown(f"**{bilabel('film_simulation')}:** {r.get('film_simulation', '-')}")
+                st.markdown(f"**{bilabel('white_balance')}:** {r.get('weissabgleich', '-')}")
+                st.markdown(f"**{bilabel('wb_shift')}:** {r.get('wb_shift', '-')}")
+                st.markdown(f"**{bilabel('dynamic_range')}:** {r.get('dynamikbereich', '-')}")
             with col2:
-                st.markdown(f"**{t['highlights']}:** {r.get('lichter', '-')}")
-                st.markdown(f"**{t['shadows']}:** {r.get('schatten', '-')}")
-                st.markdown(f"**{t['color']}:** {r.get('farbe', '-')}")
+                st.markdown(f"**{bilabel('highlights')}:** {r.get('lichter', '-')}")
+                st.markdown(f"**{bilabel('shadows')}:** {r.get('schatten', '-')}")
+                st.markdown(f"**{bilabel('color')}:** {r.get('farbe', '-')}")
             with col3:
-                st.markdown(f"**{t['sharpness']}:** {r.get('schaerfe', '-')}")
-                st.markdown(f"**{t['noise_reduction']}:** {r.get('rauschreduzierung', '-')}")
+                st.markdown(f"**{bilabel('sharpness')}:** {r.get('schaerfe', '-')}")
+                st.markdown(f"**{bilabel('noise_reduction')}:** {r.get('rauschreduzierung', '-')}")
                 if r.get("quelle"):
-                    st.markdown(f"**{t['source']}:** [{r.get('quelle')}]({r.get('quelle')})")
+                    st.markdown(f"**{bilabel('source')}:** [{r.get('quelle')}]({r.get('quelle')})")
 
             if r.get("notizen"):
                 st.info(t["note_label"].format(note=r.get("notizen")))
@@ -405,11 +418,11 @@ with tab2:
         col1, col2 = st.columns(2)
         with col1:
             name = st.text_input(
-                t["recipe_name_required"],
+                bilabel("recipe_name") + " *",
                 value=scraped.get("name", ""),
                 placeholder=t["recipe_name_placeholder"],
             )
-            kategorie = st.selectbox(t["category"], CATEGORY_OPTIONS)
+            kategorie = st.selectbox(bilabel("category"), CATEGORY_OPTIONS)
 
             film_sim_default_idx = next(
                 (i for i, opt in enumerate(FILM_SIM_OPTIONS)
@@ -417,17 +430,17 @@ with tab2:
                 0,
             )
             film_sim = st.multiselect(
-                t["film_simulation"],
+                bilabel("film_simulation"),
                 FILM_SIM_OPTIONS,
                 default=[FILM_SIM_OPTIONS[film_sim_default_idx]],
             )
             weissabgleich = st.text_input(
-                t["white_balance"],
+                bilabel("white_balance"),
                 value=scraped.get("weissabgleich", ""),
                 placeholder=t["wb_placeholder"],
             )
             wb_shift = st.text_input(
-                t["wb_shift"],
+                bilabel("wb_shift"),
                 value=scraped.get("wb_shift", ""),
                 placeholder=t["wb_shift_placeholder"],
             )
@@ -440,29 +453,29 @@ with tab2:
                 0,
             )
             dynamikbereich = st.selectbox(
-                t["dynamic_range"], dr_options, index=dr_default
+                bilabel("dynamic_range"), dr_options, index=dr_default
             )
             lichter = st.slider(
-                t["highlights"], -2, 4, scraped.get("lichter", 0)
+                bilabel("highlights"), -2, 4, scraped.get("lichter", 0)
             )
             schatten = st.slider(
-                t["shadows"], -2, 4, scraped.get("schatten", 0)
+                bilabel("shadows"), -2, 4, scraped.get("schatten", 0)
             )
             farbe = st.slider(
-                t["color"], -4, 4, scraped.get("farbe", 0)
+                bilabel("color"), -4, 4, scraped.get("farbe", 0)
             )
             schaerfe = st.slider(
-                t["sharpness"], -4, 4, scraped.get("schaerfe", 0)
+                bilabel("sharpness"), -4, 4, scraped.get("schaerfe", 0)
             )
             rauschreduzierung = st.slider(
-                t["noise_reduction"], -4, 4, scraped.get("rauschreduzierung", 0)
+                bilabel("noise_reduction"), -4, 4, scraped.get("rauschreduzierung", 0)
             )
 
         notizen = st.text_area(
-            t["notes"], placeholder=t["notes_placeholder"]
+            bilabel("notes"), placeholder=t["notes_placeholder"]
         )
         quelle = st.text_input(
-            t["source"],
+            bilabel("source"),
             value=scraped.get("quelle", url_input or ""),
             placeholder=t["source_placeholder"],
         )
