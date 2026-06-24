@@ -45,8 +45,7 @@ def save_rezept(rezept):
         row = [rezept.get(h, "") for h in headers]
         sheet.append_row(row)
         return True
-    120
-    as e:
+    except Exception    as e:
         st.error(f"Fehler beim Speichern: {e}")
         return False
 
