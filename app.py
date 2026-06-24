@@ -1,101 +1,163 @@
 import streamlit as st
-import json
-import os
+import gspread
+from google.oauth2.service_account import Credentials
+import pandas as pd
+from datetime import datetime
 
-DATA_FILE = "rezepte.json"
+# --- Google Sheets Verbindung ---
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+SHEET_ID = "1fLh1F5JgKqJYk9Iqryl6JaJjq2jhhPhqmbdqHUjl2j4"
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    return []
+@st.cache_resource
+def get_sheet():
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"], scopes=SCOPES
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(SHEET_ID).sheet1
+    return sheet
 
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def load_rezepte():
+    try:
+        sheet = get_sheet()
+        data = sheet.get_all_records()
+        return data
+    except Exception as e:
+        st.error(f"Fehler beim Laden: {e}")
+        return []
 
-st.set_page_config(page_title="📷 Fuji X-T2 Rezepte", layout="wide")
-st.title("📷 Fuji X-T2 Film Simulation Rezepte")
+def save_rezept(rezept):
+    try:
+        sheet = get_sheet()
+        headers = sheet.row_values(1)
+        if not headers:
+            headers = ["name","kategorie","film_simulation","weissabgleich",
+                       "wb_shift","dynamikbereich","lichter","schatten",
+                       "farbe","schaerfe","rauschreduzierung","notizen",
+                       "quelle","datum"]
+            sheet.append_row(headers)
+        row = [rezept.get(h, "") for h in headers]
+        sheet.append_row(row)
+        return True
+    except Exception as e:
+        st.error(f"Fehler beim Speichern: {e}")
+        return False
 
-rezepte = load_data()
+def delete_rezept(index):
+    try:
+        sheet = get_sheet()
+        sheet.delete_rows(index + 2)
+        return True
+    except Exception as e:
+        st.error(f"Fehler beim Loeschen: {e}")
+        return False
 
-# --- SIDEBAR: Filter ---
-st.sidebar.header("🔍 Filter")
+# --- App Layout ---
+st.set_page_config(page_title="Fuji X-T2 Rezepte", layout="wide", page_icon="camera")
+st.title("Fuji X-T2 Film Simulation Rezepte")
+st.caption("Deine persoenliche Rezept-Datenbank | gespeichert in Google Sheets")
+
+# --- Sidebar Filter ---
+st.sidebar.header("Filter")
+rezepte = load_rezepte()
+
 alle_kategorien = sorted(set(r.get("kategorie", "Allgemein") for r in rezepte)) or ["Allgemein"]
 filter_kat = st.sidebar.multiselect("Kategorie", alle_kategorien, default=alle_kategorien)
-alle_sims = sorted(set(r.get("film_simulation", "") for r in rezepte)) or [""]
+
+alle_sims = sorted(set(r.get("film_simulation", "") for r in rezepte if r.get("film_simulation"))) or [""]
 filter_sim = st.sidebar.multiselect("Film Simulation", alle_sims, default=alle_sims)
 
 gefiltert = [
     r for r in rezepte
-    if r.get("kategorie", "Allgemein") in (filter_kat or alle_kategorien)
+    if r.get("kategorie", "Allgemein") in filter_kat
     and r.get("film_simulation", "") in (filter_sim or alle_sims)
 ]
 
-# --- REZEPTE ANZEIGEN ---
-st.subheader(f"📋 {len(gefiltert)} Rezept(e) gefunden")
+# --- Rezepte anzeigen ---
+tab1, tab2 = st.tabs(["Rezepte ansehen", "Neues Rezept hinzufuegen"])
 
-if not gefiltert:
-    st.info("Noch keine Rezepte gespeichert. Füge unten dein erstes Rezept hinzu!")
+with tab1:
+    st.subheader(f"{len(gefiltert)} Rezept(e) gefunden")
+    if not gefiltert:
+        st.info("Noch keine Rezepte gespeichert. Fuege unten dein erstes Rezept hinzu!")
+    for i, r in enumerate(gefiltert):
+        with st.expander(f"{r.get('name','Unbekannt')} | {r.get('kategorie','')} | {r.get('film_simulation','')} "):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown(f"**Film Simulation:** {r.get('film_simulation','-')}")
+                st.markdown(f"**Weissabgleich:** {r.get('weissabgleich','-')}")
+                st.markdown(f"**WB Shift:** {r.get('wb_shift','-')}")
+                st.markdown(f"**Dynamikbereich:** {r.get('dynamikbereich','-')}")
+            with col2:
+                st.markdown(f"**Lichter:** {r.get('lichter','-')}")
+                st.markdown(f"**Schatten:** {r.get('schatten','-')}")
+                st.markdown(f"**Farbe:** {r.get('farbe','-')}")
+            with col3:
+                st.markdown(f"**Schaerfe:** {r.get('schaerfe','-')}")
+                st.markdown(f"**Rauschreduzierung:** {r.get('rauschreduzierung','-')}")
+                if r.get('quelle'):
+                    st.markdown(f"**Quelle:** [{r.get('quelle')}]({r.get('quelle')})")
+            if r.get('notizen'):
+                st.info(f"Notiz: {r.get('notizen')}")
+            if r.get('datum'):
+                st.caption(f"Gespeichert am: {r.get('datum')}")
+            if st.button("Loeschen", key=f"del_{i}"):
+                real_index = rezepte.index(r)
+                if delete_rezept(real_index):
+                    st.success("Rezept geloescht!")
+                    st.cache_resource.clear()
+                    st.rerun()
 
-cols = st.columns(3)
-for i, r in enumerate(gefiltert):
-    with cols[i % 3]:
-        with st.expander(f"🎞️ {r['name']} — {r.get('kategorie', '')}"):
-            st.markdown(f"**Film Simulation:** {r.get('film_simulation', '-')}")
-            st.markdown(f"**Weissabgleich:** {r.get('weissabgleich', '-')}")
-            st.markdown(f"**WB Shift:** {r.get('wb_shift', '-')}")
-            st.markdown(f"**Dynamikbereich:** {r.get('dynamikbereich', '-')}")
-            st.markdown(f"**Lichter:** {r.get('lichter', '-')}")
-            st.markdown(f"**Schatten:** {r.get('schatten', '-')}")
-            st.markdown(f"**Farbe:** {r.get('farbe', '-')}")
-            st.markdown(f"**Schärfe:** {r.get('schaerfe', '-')}")
-            st.markdown(f"**Rauschreduzierung:** {r.get('rauschreduzierung', '-')}")
-            if r.get("notizen"):
-                st.markdown(f"📝 *{r['notizen']}*")
-            if r.get("quelle"):
-                st.markdown(f"[🔗 Originalrezept ansehen]({r['quelle']})")
-            if st.button(f"🗑️ Löschen", key=f"del_{i}"):
-                rezepte.remove(r)
-                save_data(rezepte)
-                st.rerun()
-
-# --- NEUES REZEPT HINZUFÜGEN ---
-st.divider()
-st.subheader("➕ Neues Rezept hinzufügen")
-
-with st.form("neues_rezept"):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        name = st.text_input("Name des Rezepts *")
-        kategorie = st.selectbox("Kategorie", ["Architektur", "Porträt", "Street", "Landschaft", "Reise", "Schwarz/Weiss", "Allgemein"])
-        film_simulation = st.selectbox("Film Simulation", ["Classic Chrome", "Velvia", "Provia/Standard", "Astia/Soft", "PRO Neg. Std", "PRO Neg. Hi", "Acros", "Acros+R", "Acros+G", "Acros+Ye", "Monochrome", "Eterna", "Sepia"])
-    with col2:
-        weissabgleich = st.text_input("Weissabgleich (z.B. 4300K / Auto)")
-        wb_shift = st.text_input("WB Shift (z.B. R-3 B+3)")
-        dynamikbereich = st.selectbox("Dynamikbereich", ["DR100", "DR200", "DR400"])
-        lichter = st.select_slider("Lichter (Highlight)", options=list(range(-2, 5)), value=0)
-        schatten = st.select_slider("Schatten (Shadow)", options=list(range(-2, 5)), value=0)
-    with col3:
-        farbe = st.select_slider("Farbe (Color)", options=list(range(-4, 5)), value=0)
-        schaerfe = st.select_slider("Schärfe", options=list(range(-4, 5)), value=0)
-        rauschreduzierung = st.select_slider("Rauschreduzierung", options=list(range(-4, 5)), value=0)
-        quelle = st.text_input("Quelle URL (optional)")
-        notizen = st.text_area("Notizen (optional)", height=80)
-
-    submitted = st.form_submit_button("💾 Rezept speichern")
-    if submitted:
-        if name:
-            neues = {
-                "name": name, "kategorie": kategorie, "film_simulation": film_simulation,
-                "weissabgleich": weissabgleich, "wb_shift": wb_shift, "dynamikbereich": dynamikbereich,
-                "lichter": lichter, "schatten": schatten, "farbe": farbe,
-                "schaerfe": schaerfe, "rauschreduzierung": rauschreduzierung,
-                "quelle": quelle, "notizen": notizen
-            }
-            rezepte.append(neues)
-            save_data(rezepte)
-            st.success(f"✅ Rezept '{name}' gespeichert!")
-            st.rerun()
-        else:
-            st.error("Bitte mindestens einen Namen eingeben.")
+with tab2:
+    st.subheader("Neues Rezept speichern")
+    with st.form("rezept_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            name = st.text_input("Rezeptname *", placeholder="z.B. Mein Classic Chrome Look")
+            kategorie = st.selectbox("Kategorie", ["Architektur", "Portraet", "Street", "Reise", "Landschaft", "Allgemein"])
+            film_sim = st.selectbox("Film Simulation", [
+                "Provia/Standard", "Velvia/Vivid", "Astia/Soft",
+                "Classic Chrome", "PRO Neg. Hi", "PRO Neg. Std",
+                "Acros", "Acros+R", "Acros+G", "Acros+Ye",
+                "Monochrome", "Monochrome+R", "Monochrome+G", "Monochrome+Ye",
+                "Sepia", "Eterna/Cinema"
+            ])
+            weissabgleich = st.text_input("Weissabgleich", placeholder="z.B. Tageslicht oder 5200K")
+            wb_shift = st.text_input("WB Shift (R/B)", placeholder="z.B. R+3, B-2")
+        with col2:
+            dynamikbereich = st.selectbox("Dynamikbereich", ["DR100", "DR200", "DR400", "Auto"])
+            lichter = st.slider("Lichter", -2, 4, 0)
+            schatten = st.slider("Schatten", -2, 4, 0)
+            farbe = st.slider("Farbe", -4, 4, 0)
+            schaerfe = st.slider("Schaerfe", -4, 4, 0)
+            rauschreduzierung = st.slider("Rauschreduzierung", -4, 4, 0)
+        notizen = st.text_area("Notizen", placeholder="z.B. Ideal fuer goldene Stunde")
+        quelle = st.text_input("Quelle (URL)", placeholder="https://fujixweekly.com/...")
+        submitted = st.form_submit_button("Rezept speichern")
+        if submitted:
+            if not name:
+                st.error("Bitte einen Rezeptnamen eingeben!")
+            else:
+                neues_rezept = {
+                    "name": name,
+                    "kategorie": kategorie,
+                    "film_simulation": film_sim,
+                    "weissabgleich": weissabgleich,
+                    "wb_shift": wb_shift,
+                    "dynamikbereich": dynamikbereich,
+                    "lichter": lichter,
+                    "schatten": schatten,
+                    "farbe": farbe,
+                    "schaerfe": schaerfe,
+                    "rauschreduzierung": rauschreduzierung,
+                    "notizen": notizen,
+                    "quelle": quelle,
+                    "datum": datetime.now().strftime("%d.%m.%Y %H:%M")
+                }
+                if save_rezept(neues_rezept):
+                    st.success(f"Rezept '{name}' erfolgreich gespeichert!")
+                    st.cache_resource.clear()
+                    st.rerun()
