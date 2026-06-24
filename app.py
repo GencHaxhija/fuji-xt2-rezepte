@@ -59,6 +59,9 @@ LANGS = {
         "saving_error": "Fehler beim Speichern: {error}",
         "deleting_error": "Fehler beim Löschen: {error}",
         "no_scrape_data": "Keine Daten gefunden. Bitte manuell eingeben.",
+        "confirm_delete": "Bist du sicher, dass du das Rezept '{name}' löschen möchtest?",
+        "yes_delete": "Ja, löschen",
+        "cancel": "Abbrechen",
     },
     "en": {
         "title": "Fuji X-T2 Recipe Management",
@@ -108,6 +111,9 @@ LANGS = {
         "saving_error": "Error saving recipe: {error}",
         "deleting_error": "Error deleting recipe: {error}",
         "no_scrape_data": "No data found. Please enter manually.",
+        "confirm_delete": "Are you sure you want to delete the recipe '{name}'?",
+        "yes_delete": "Yes, delete",
+        "cancel": "Cancel",
     },
 }
 
@@ -377,11 +383,27 @@ with tab1:
             if r.get("datum"):
                 st.caption(t["saved_on"].format(date=r.get("datum")))
 
-            if st.button(t["delete"], key=f"del_{i}"):
-                real_index = rezepte.index(r)
-                if delete_rezept(real_index, t):
-                    st.success(t["deleted"])
-                    st.cache_resource.clear()
+            # Delete confirmation logic
+            if st.session_state.get("delete_confirm_idx") == i:
+                st.warning(t["confirm_delete"].format(name=r.get("name", t["unknown"])))
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button(t["yes_delete"], key=f"yes_del_{i}", type="primary"):
+                        real_index = rezepte.index(r)
+                        if delete_rezept(real_index, t):
+                            st.success(t["deleted"])
+                            if "delete_confirm_idx" in st.session_state:
+                                del st.session_state["delete_confirm_idx"]
+                            st.cache_resource.clear()
+                            st.rerun()
+                with col_no:
+                    if st.button(t["cancel"], key=f"cancel_del_{i}"):
+                        if "delete_confirm_idx" in st.session_state:
+                            del st.session_state["delete_confirm_idx"]
+                        st.rerun()
+            else:
+                if st.button(t["delete"], key=f"del_{i}"):
+                    st.session_state["delete_confirm_idx"] = i
                     st.rerun()
 
 # ===================== TAB 2: New Recipe =====================
