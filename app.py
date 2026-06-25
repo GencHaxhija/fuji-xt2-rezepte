@@ -630,8 +630,8 @@ filter_tags = st.sidebar.multiselect(
 
 gefiltert = [
     r for r in rezepte
-    if r.get("kategorie", "Allgemein") in filter_kat
-    and recipe_matches_sim(r.get("film_simulation", ""), filter_sim)
+    if (not filter_kat or r.get("kategorie", "Allgemein") in filter_kat)
+    and (not filter_sim or recipe_matches_sim(r.get("film_simulation", ""), filter_sim))
     and recipe_matches_tags(r.get("tags", ""), filter_tags)
     and (not only_favs or r.get("favorit", "").strip().lower() == "ja")
     and (
