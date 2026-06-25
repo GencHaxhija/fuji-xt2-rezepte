@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import re
 
 # --- Page Config (MUST be the first Streamlit command) ---
-st.set_page_config(page_title="Fuji X-T2 Rezepte", layout="wide", page_icon="📷")
+st.set_page_config(page_title="Fuji X-T2 Rezepte", layout="wide", page_icon="favicon.png")
 
 # --- Language Support ---
 LANGS = {
