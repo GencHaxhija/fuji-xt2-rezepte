@@ -315,7 +315,7 @@ def update_rezept(index, rezept, t):
                 headers.append(req)
                 
         row = [str(rezept.get(h, "")) for h in headers]
-        sheet.update(range_name=f"A{index + 2}", values=[row], value_input_option="USER_ENTERED")
+        sheet.update(range_name=f"A{index + 2}", values=[row], value_input_option="RAW")
         return True
     except Exception as e:
         st.error(t["saving_error"].format(error=e))
@@ -329,7 +329,7 @@ def save_rezept(rezept, t):
         headers = sheet.row_values(1)
         if not headers:
             headers = REQUIRED_HEADERS.copy()
-            sheet.append_row(headers, value_input_option="USER_ENTERED")
+            sheet.append_row(headers, value_input_option="RAW")
         else:
             # Schema upgrade: append any missing columns
             for req in REQUIRED_HEADERS:
@@ -338,7 +338,7 @@ def save_rezept(rezept, t):
                     headers.append(req)
                     
         row = [str(rezept.get(h, "")) for h in headers]
-        sheet.append_row(row, value_input_option="USER_ENTERED")
+        sheet.append_row(row, value_input_option="RAW")
         return True
     except Exception as e:
         st.error(t["saving_error"].format(error=e))
