@@ -271,15 +271,21 @@ def get_sheet():
 
 
 @st.cache_data(ttl=60)
-def load_rezepte(lang_code="de"):
-    """Load all recipes from Google Sheets."""
+def _load_rezepte_data():
+    """Load all recipes from Google Sheets (cached, no UI calls)."""
+    sheet = get_sheet()
+    data = sheet.get_all_records()
+    for idx, r in enumerate(data):
+        r["_row_idx"] = idx
+    return data
+
+
+def load_rezepte():
+    """Load recipes with error handling (not cached itself)."""
     try:
-        sheet = get_sheet()
-        data = sheet.get_all_records()
-        for idx, r in enumerate(data):
-            r["_row_idx"] = idx
-        return data
+        return _load_rezepte_data()
     except Exception as e:
+        lang_code = st.session_state.get("lang", "de")
         err_msg = LANGS.get(lang_code, LANGS["de"])["loading_error"].format(error=e)
         st.error(err_msg)
         return []
@@ -591,7 +597,7 @@ st.sidebar.header(t["filter"])
 search_query = st.sidebar.text_input(t["search"], placeholder=t["search_placeholder"])
 only_favs = st.sidebar.checkbox(t["only_favorites"], value=False)
 
-rezepte = load_rezepte(st.session_state.get("lang", "de"))
+rezepte = load_rezepte()
 
 alle_kategorien = sorted(
     set(r.get("kategorie", "Allgemein") for r in rezepte)
