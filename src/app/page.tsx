@@ -103,6 +103,13 @@ function unique(arr: string[]): string[] {
   return arr.filter(v => { if (seen[v]) return false; seen[v] = true; return true; });
 }
 
+/** Clamps a numeric value to [min, max]. Falls back to 0 if NaN. */
+function clampVal(v: unknown, min: number, max: number): number {
+  const n = Number(v);
+  if (isNaN(n)) return 0;
+  return Math.min(max, Math.max(min, n));
+}
+
 function Slider({ label, min, max, value, onChange }: { label: string; min: number; max: number; value: number; onChange: (v: number) => void }) {
   return (
     <div className="field">
@@ -248,11 +255,12 @@ export default function Home() {
         weissabgleich: d.weissabgleich || prev.weissabgleich,
         wb_shift: d.wb_shift || prev.wb_shift,
         dynamikbereich: DR_OPTIONS.includes(d.dynamikbereich) ? d.dynamikbereich : prev.dynamikbereich,
-        lichter: d.lichter ?? prev.lichter,
-        schatten: d.schatten ?? prev.schatten,
-        farbe: d.farbe ?? prev.farbe,
-        schaerfe: d.schaerfe ?? prev.schaerfe,
-        rauschreduzierung: d.rauschreduzierung ?? prev.rauschreduzierung,
+        // Clamp scraped slider values to valid ranges to prevent out-of-range errors
+        lichter: d.lichter != null ? clampVal(d.lichter, -2, 4) : prev.lichter,
+        schatten: d.schatten != null ? clampVal(d.schatten, -2, 4) : prev.schatten,
+        farbe: d.farbe != null ? clampVal(d.farbe, -4, 4) : prev.farbe,
+        schaerfe: d.schaerfe != null ? clampVal(d.schaerfe, -4, 4) : prev.schaerfe,
+        rauschreduzierung: d.rauschreduzierung != null ? clampVal(d.rauschreduzierung, -4, 4) : prev.rauschreduzierung,
         grain: GRAIN_OPTIONS.includes(d.grain) ? d.grain : prev.grain,
         color_chrome: CC_OPTIONS.includes(d.color_chrome) ? d.color_chrome : prev.color_chrome,
         tone_curve: TONE_OPTIONS.includes(d.tone_curve) ? d.tone_curve : prev.tone_curve,
