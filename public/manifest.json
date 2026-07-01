@@ -4,9 +4,9 @@
   "description": "Persönliche Fujifilm X-T2 Film Simulation Rezepte",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1a1a2e",
-  "theme_color": "#e8a020",
   "orientation": "portrait",
+  "background_color": "#1a1a1a",
+  "theme_color": "#e8a020",
   "icons": [
     {
       "src": "/favicon.png",

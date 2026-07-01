@@ -73,9 +73,7 @@ const T = {
     color: 'Farbe', sharpness: 'Schärfe', nr: 'Rauschreduzierung',
     grain: 'Körnung', toneCurve: 'Gradationskurve', colorChrome: 'Color Chrome',
     imageUrl: 'Bild-URL', imageUrlPh: 'https://example.com/bild.jpg',
-    uploadPhoto: 'Foto hochladen', uploadOrUrl: 'oder URL eingeben',
-    uploadHint: 'Aus Kamerarolle wählen',
-    removePhoto: 'Foto entfernen',
+    imageUpload: 'Foto hochladen', imageUploadHint: 'Oder aus Kamerarolle wählen',
     tags: 'Tags', tagsPh: 'z.B. sonnig, reise', notes: 'Notizen', notesPh: 'z.B. Ideal für goldene Stunde',
     source: 'Quelle (URL)', sourcePh: 'https://fujixweekly.com/...',
     savedOn: (d: string) => `Gespeichert am: ${d}`,
@@ -84,8 +82,10 @@ const T = {
     favorite: 'Favorit',
     simPreview: 'Simulationsvorschau',
     reset: 'Zurücksetzen',
-    ownPhoto: 'Eigenes Foto',
-    samplePhoto: 'Beispielfoto',
+    uploadOrUrl: 'Foto hochladen oder URL eingeben',
+    removePhoto: 'Foto entfernen',
+    previewWithPhoto: 'Vorschau mit eigenem Foto',
+    previewPlaceholder: 'Vorschau mit Platzhalterbild',
   },
   en: {
     title: 'Fuji X-T2 Recipe Management',
@@ -119,9 +119,7 @@ const T = {
     color: 'Color', sharpness: 'Sharpness', nr: 'Noise Reduction',
     grain: 'Grain Effect', toneCurve: 'Tone Curve', colorChrome: 'Color Chrome',
     imageUrl: 'Image URL', imageUrlPh: 'https://example.com/image.jpg',
-    uploadPhoto: 'Upload Photo', uploadOrUrl: 'or enter URL',
-    uploadHint: 'Choose from Camera Roll',
-    removePhoto: 'Remove Photo',
+    imageUpload: 'Upload Photo', imageUploadHint: 'Or choose from camera roll',
     tags: 'Tags', tagsPh: 'e.g. sunny, travel', notes: 'Notes', notesPh: 'e.g. Ideal for golden hour',
     source: 'Source (URL)', sourcePh: 'https://fujixweekly.com/...',
     savedOn: (d: string) => `Saved on: ${d}`,
@@ -130,8 +128,10 @@ const T = {
     favorite: 'Favorite',
     simPreview: 'Simulation Preview',
     reset: 'Reset',
-    ownPhoto: 'Own Photo',
-    samplePhoto: 'Sample Photo',
+    uploadOrUrl: 'Upload photo or enter URL',
+    removePhoto: 'Remove photo',
+    previewWithPhoto: 'Preview with your photo',
+    previewPlaceholder: 'Preview with placeholder image',
   },
 };
 
@@ -147,12 +147,15 @@ function clampVal(v: unknown, min: number, max: number): number {
 }
 
 /** Slider with Reset-Button — only visible when value ≠ 0 */
-function Slider({ label, min, max, value, onChange }: { label: string; min: number; max: number; value: number; onChange: (v: number) => void }) {
+function Slider({ label, min, max, value, onChange }: {
+  label: string; min: number; max: number; value: number; onChange: (v: number) => void;
+}) {
   return (
     <div className="field">
       <label>{label}</label>
       <div className="slider-row">
-        <input type="range" min={min} max={max} value={value} onChange={e => onChange(Number(e.target.value))} />
+        <input type="range" min={min} max={max} value={value}
+          onChange={e => onChange(Number(e.target.value))} />
         <span className="slider-val">{value > 0 ? `+${value}` : value}</span>
         <button
           type="button"
@@ -166,18 +169,17 @@ function Slider({ label, min, max, value, onChange }: { label: string; min: numb
   );
 }
 
-/** Foto-Upload Komponente: Kamerarolle oder URL */
-function PhotoInput({
-  value, onChange, uploadLabel, urlLabel, urlPlaceholder, uploadHint, removeLabel, orLabel
+/** Foto-Upload + URL Fallback — gibt Data-URL oder externe URL zurück */
+function ImageInput({
+  value, onChange, labelUpload, labelUrl, placeholderUrl, labelRemove, labelHint
 }: {
   value: string;
   onChange: (v: string) => void;
-  uploadLabel: string;
-  urlLabel: string;
-  urlPlaceholder: string;
-  uploadHint: string;
-  removeLabel: string;
-  orLabel: string;
+  labelUpload: string;
+  labelUrl: string;
+  placeholderUrl: string;
+  labelRemove: string;
+  labelHint: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -186,8 +188,7 @@ function PhotoInput({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
-      const result = ev.target?.result as string;
-      if (result) onChange(result);
+      if (typeof ev.target?.result === 'string') onChange(ev.target.result);
     };
     reader.readAsDataURL(file);
   };
@@ -196,76 +197,61 @@ function PhotoInput({
 
   return (
     <div className="field">
-      <label>{urlLabel}</label>
-      {value ? (
-        <div className="photo-preview-wrap">
-          <img src={value} alt="Vorschau" className="photo-preview-thumb" />
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>
-            {removeLabel}
+      <label>{labelUpload}</label>
+      {value && (
+        <div className="img-preview-wrap">
+          <img src={value} alt="Vorschau" className="img-preview-thumb" />
+          <button type="button" className="btn btn-sm btn-danger img-remove-btn"
+            onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>
+            {labelRemove}
           </button>
-          {isDataUrl && <span className="photo-from-roll">📷 Kamerarolle</span>}
         </div>
-      ) : (
-        <div className="photo-input-group">
-          <button
-            type="button"
-            className="btn btn-upload"
-            onClick={() => fileRef.current?.click()}
-          >
-            📷 {uploadLabel}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            style={{ display: 'none' }}
-            onChange={handleFile}
-          />
-          <span className="photo-or">{orLabel}</span>
-          <input
-            type="url"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            placeholder={urlPlaceholder}
-            className="photo-url-input"
-          />
-        </div>
+      )}
+      <div className="img-input-row">
+        <button type="button" className="btn btn-upload"
+          onClick={() => fileRef.current?.click()}>
+          📷 {labelHint}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={handleFile}
+        />
+      </div>
+      {!isDataUrl && (
+        <input
+          type="url"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholderUrl}
+          style={{ marginTop: '0.4rem' }}
+        />
       )}
     </div>
   );
 }
 
-/** Film-Simulation Vorschau — unterstützt eigenes Foto (Base64/URL) oder Picsum-Fallback */
-function FilmSimPreview({ simulations, label, customImage, ownPhotoLabel, samplePhotoLabel }: {
+/** Film-Simulation Vorschau — nutzt eigenes Foto wenn vorhanden, sonst Platzhalterbild */
+function FilmSimPreview({
+  simulations, label, previewImageUrl
+}: {
   simulations: string[];
   label: string;
-  customImage?: string;
-  ownPhotoLabel: string;
-  samplePhotoLabel: string;
+  previewImageUrl?: string;
 }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const [useOwn, setUseOwn] = useState(false);
   const sim = simulations[activeIdx] || simulations[0] || 'Provia/Standard';
   const filter = FILM_SIM_FILTERS[sim] || FILM_SIM_FILTERS['Provia/Standard'];
-  const imgSrc = (useOwn && customImage) ? customImage : 'https://picsum.photos/seed/fuji-sample/600/200';
+  const imgSrc = previewImageUrl && previewImageUrl.trim()
+    ? previewImageUrl
+    : 'https://picsum.photos/seed/fuji-sample/600/200';
 
   return (
     <div className="sim-preview">
       <div className="sim-preview-label">{label}</div>
-
-      {/* Tabs: eigenes Foto vs. Beispiel */}
-      {customImage && (
-        <div className="sim-preview-source-tabs">
-          <button type="button" className={`sim-tab-btn${useOwn ? ' active' : ''}`} onClick={() => setUseOwn(true)}>
-            📷 {ownPhotoLabel}
-          </button>
-          <button type="button" className={`sim-tab-btn${!useOwn ? ' active' : ''}`} onClick={() => setUseOwn(false)}>
-            🖼 {samplePhotoLabel}
-          </button>
-        </div>
-      )}
-
       {simulations.length > 1 && (
         <div className="sim-preview-tabs">
           {simulations.map((s, i) => (
@@ -277,15 +263,26 @@ function FilmSimPreview({ simulations, label, customImage, ownPhotoLabel, sample
           ))}
         </div>
       )}
-
       <div className="sim-preview-name">{sim}</div>
       <div className="sim-preview-img-wrap">
         <div className="sim-preview-split">
-          <img src={imgSrc} alt="Original" className="sim-preview-img" style={{ filter: 'none' }} loading="lazy" />
+          <img
+            src={imgSrc}
+            alt="Original"
+            className="sim-preview-img"
+            style={{ filter: 'none' }}
+            loading="lazy"
+          />
           <div className="sim-preview-split-label">Original</div>
         </div>
         <div className="sim-preview-split">
-          <img src={imgSrc} alt={sim} className="sim-preview-img" style={{ filter }} loading="lazy" />
+          <img
+            src={imgSrc}
+            alt={sim}
+            className="sim-preview-img"
+            style={{ filter }}
+            loading="lazy"
+          />
           <div className="sim-preview-split-label">{sim}</div>
         </div>
       </div>
@@ -293,12 +290,17 @@ function FilmSimPreview({ simulations, label, customImage, ownPhotoLabel, sample
   );
 }
 
-function MultiSelect({ options, selected, onChange }: { options: string[]; selected: string[]; onChange: (v: string[]) => void }) {
+function MultiSelect({ options, selected, onChange }: {
+  options: string[]; selected: string[]; onChange: (v: string[]) => void;
+}) {
   return (
     <div className="multiselect-wrapper">
       {options.map(o => (
-        <button key={o} type="button" className={`ms-option${selected.includes(o) ? ' selected' : ''}`}
-          onClick={() => onChange(selected.includes(o) ? selected.filter(x => x !== o) : [...selected, o])}>
+        <button key={o} type="button"
+          className={`ms-option${selected.includes(o) ? ' selected' : ''}`}
+          onClick={() => onChange(selected.includes(o)
+            ? selected.filter(x => x !== o)
+            : [...selected, o])}>
           {o}
         </button>
       ))}
@@ -369,7 +371,7 @@ export default function Home() {
   const allKat = unique(rezepte.map(r => String(r.kategorie || 'Allgemein'))).sort();
   const allSims = unique(rezepte.map(r => String(r.film_simulation || '')).filter(Boolean)).sort();
   const allTagsRaw: string[] = [];
-  rezepte.forEach(r => String(r.tags || '').split(',').forEach(t => { const c = t.trim(); if (c) allTagsRaw.push(c); }));
+  rezepte.forEach(r => String(r.tags || '').split(',').forEach(tg => { const c = tg.trim(); if (c) allTagsRaw.push(c); }));
   const allTags = unique(allTagsRaw).sort();
 
   let filtered = rezepte.filter(r => {
@@ -380,7 +382,7 @@ export default function Home() {
     }
     if (filterTags.length) {
       const rt = String(r.tags || '').split(',').map(s => s.trim().toLowerCase());
-      if (!filterTags.some(t => rt.includes(t.toLowerCase()))) return false;
+      if (!filterTags.some(tg => rt.includes(tg.toLowerCase()))) return false;
     }
     if (onlyFavs && String(r.favorit || '').toLowerCase() !== 'ja') return false;
     if (search) {
@@ -390,7 +392,13 @@ export default function Home() {
     return true;
   });
 
-  const parseDate = (s: string) => { try { const p = s.split(' '); const [d,m,y] = p[0].split('.'); return new Date(`${y}-${m}-${d}T${p[1] || '00:00'}`).getTime(); } catch { return 0; } };
+  const parseDate = (s: string) => {
+    try {
+      const p = s.split(' ');
+      const [d, m, y] = p[0].split('.');
+      return new Date(`${y}-${m}-${d}T${p[1] || '00:00'}`).getTime();
+    } catch { return 0; }
+  };
   if (sortOpt === 0) filtered.sort((a, b) => parseDate(String(b.datum || '')) - parseDate(String(a.datum || '')));
   else if (sortOpt === 1) filtered.sort((a, b) => parseDate(String(a.datum || '')) - parseDate(String(b.datum || '')));
   else if (sortOpt === 2) filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -400,14 +408,21 @@ export default function Home() {
     const headers = Object.keys(filtered[0] || {}).filter(k => !k.startsWith('_'));
     const rows = [headers.join(';'), ...filtered.map(r => headers.map(h => String(r[h] ?? '')).join(';'))];
     const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = t.csvFile; a.click();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = t.csvFile;
+    a.click();
   };
 
   const handleScrape = async () => {
     if (!scrapeUrl) { setScrapeMsg({ type: 'error', msg: 'Bitte URL eingeben.' }); return; }
     setScraping(true); setScrapeMsg(null);
     try {
-      const res = await fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: scrapeUrl }) });
+      const res = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: scrapeUrl }),
+      });
       const result = await res.json();
       if (result.error) { setScrapeMsg({ type: 'error', msg: t.scrapeErr(result.error) }); return; }
       const d = result.data || {};
@@ -441,10 +456,12 @@ export default function Home() {
     if (!form.name.trim()) { showFlash('error', t.enterName); return; }
     const now = new Date();
     const datum = `${String(now.getDate()).padStart(2,'0')}.${String(now.getMonth()+1).padStart(2,'0')}.${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    // Base64-Bilder nicht in Sheets speichern — nur als Flag markieren
-    const bild_url_save = form.bild_url.startsWith('data:') ? '[lokales Foto]' : form.bild_url;
-    const payload = { ...form, bild_url: bild_url_save, film_simulation: form.film_simulation.join(' / '), datum, favorit: '' };
-    const res = await fetch('/api/rezepte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const payload = { ...form, film_simulation: form.film_simulation.join(' / '), datum, favorit: '' };
+    const res = await fetch('/api/rezepte', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     const data = await res.json();
     if (data.error) { showFlash('error', data.error); return; }
     showFlash('success', t.saved_msg(form.name));
@@ -457,9 +474,18 @@ export default function Home() {
 
   const handleUpdate = async (r: Rezept) => {
     if (!editForm || !editForm.name.trim()) { showFlash('error', t.enterName); return; }
-    const bild_url_save = editForm.bild_url.startsWith('data:') ? '[lokales Foto]' : editForm.bild_url;
-    const payload = { ...editForm, bild_url: bild_url_save, film_simulation: editForm.film_simulation.join(' / '), _rowIdx: r._rowIdx, datum: r.datum, favorit: r.favorit || '' };
-    const res = await fetch('/api/rezepte', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const payload = {
+      ...editForm,
+      film_simulation: editForm.film_simulation.join(' / '),
+      _rowIdx: r._rowIdx,
+      datum: r.datum,
+      favorit: r.favorit || '',
+    };
+    const res = await fetch('/api/rezepte', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     const data = await res.json();
     if (data.error) { showFlash('error', data.error); return; }
     showFlash('success', t.updated_msg(editForm.name));
@@ -468,7 +494,11 @@ export default function Home() {
   };
 
   const handleDelete = async (r: Rezept) => {
-    const res = await fetch('/api/rezepte', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rowIdx: r._rowIdx }) });
+    const res = await fetch('/api/rezepte', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowIdx: r._rowIdx }),
+    });
     const data = await res.json();
     if (data.error) { showFlash('error', data.error); return; }
     showFlash('success', t.deleted);
@@ -479,7 +509,11 @@ export default function Home() {
   const toggleFav = async (r: Rezept) => {
     const isFav = String(r.favorit || '').toLowerCase() === 'ja';
     const payload = { ...r, favorit: isFav ? '' : 'ja' };
-    await fetch('/api/rezepte', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    await fetch('/api/rezepte', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     await fetchRezepte();
   };
 
@@ -509,14 +543,22 @@ export default function Home() {
     setExpanded(r._rowIdx);
   };
 
-  const RecipeForm = ({ f, setF, onSubmit, submitLabel, onCancel }: {
-    f: typeof form; setF: (v: typeof form) => void;
-    onSubmit: () => void; submitLabel: string; onCancel?: () => void;
+  const RecipeForm = ({
+    f, setF, onSubmit, submitLabel, onCancel
+  }: {
+    f: typeof form;
+    setF: (v: typeof form) => void;
+    onSubmit: () => void;
+    submitLabel: string;
+    onCancel?: () => void;
   }) => (
     <div>
       <div className="form-grid">
         <div>
-          <div className="field"><label>{t.recipeName}</label><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder={t.namePh} /></div>
+          <div className="field">
+            <label>{t.recipeName}</label>
+            <input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder={t.namePh} />
+          </div>
           {f.name && rezepte.some(r => String(r.name || '').toLowerCase() === f.name.toLowerCase()) && editIdx === null &&
             <div className="alert alert-warning" style={{ marginBottom: '0.5rem' }}>{t.duplicate}</div>}
           <div className="field">
@@ -533,38 +575,70 @@ export default function Home() {
             <FilmSimPreview
               simulations={f.film_simulation}
               label={t.simPreview}
-              customImage={f.bild_url || undefined}
-              ownPhotoLabel={t.ownPhoto}
-              samplePhotoLabel={t.samplePhoto}
+              previewImageUrl={f.bild_url}
             />
           )}
-          <div className="field"><label>{t.wb}</label><input value={f.weissabgleich} onChange={e => setF({ ...f, weissabgleich: e.target.value })} placeholder={t.wbPh} /></div>
-          <div className="field"><label>{t.wbShift}</label><input value={f.wb_shift} onChange={e => setF({ ...f, wb_shift: e.target.value })} placeholder={t.wbShiftPh} /></div>
-          <div className="field"><label>{t.grain}</label><select value={f.grain} onChange={e => setF({ ...f, grain: e.target.value })}>{GRAIN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
-          {/* Foto-Upload: Kamerarolle oder URL */}
-          <PhotoInput
+          <div className="field">
+            <label>{t.wb}</label>
+            <input value={f.weissabgleich} onChange={e => setF({ ...f, weissabgleich: e.target.value })} placeholder={t.wbPh} />
+          </div>
+          <div className="field">
+            <label>{t.wbShift}</label>
+            <input value={f.wb_shift} onChange={e => setF({ ...f, wb_shift: e.target.value })} placeholder={t.wbShiftPh} />
+          </div>
+          <div className="field">
+            <label>{t.grain}</label>
+            <select value={f.grain} onChange={e => setF({ ...f, grain: e.target.value })}>
+              {GRAIN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          {/* Foto-Upload ersetzt reines URL-Feld */}
+          <ImageInput
             value={f.bild_url}
             onChange={v => setF({ ...f, bild_url: v })}
-            uploadLabel={t.uploadPhoto}
-            urlLabel={t.imageUrl}
-            urlPlaceholder={t.imageUrlPh}
-            uploadHint={t.uploadHint}
-            removeLabel={t.removePhoto}
-            orLabel={t.uploadOrUrl}
+            labelUpload={t.imageUpload}
+            labelUrl={t.imageUrl}
+            placeholderUrl={t.imageUrlPh}
+            labelRemove={t.removePhoto}
+            labelHint={t.imageUploadHint}
           />
-          <div className="field"><label>{t.tags}</label><input value={f.tags} onChange={e => setF({ ...f, tags: e.target.value })} placeholder={t.tagsPh} /></div>
+          <div className="field">
+            <label>{t.tags}</label>
+            <input value={f.tags} onChange={e => setF({ ...f, tags: e.target.value })} placeholder={t.tagsPh} />
+          </div>
         </div>
         <div>
-          <div className="field"><label>{t.dr}</label><select value={f.dynamikbereich} onChange={e => setF({ ...f, dynamikbereich: e.target.value })}>{DR_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
+          <div className="field">
+            <label>{t.dr}</label>
+            <select value={f.dynamikbereich} onChange={e => setF({ ...f, dynamikbereich: e.target.value })}>
+              {DR_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
           <Slider label={t.highlights} min={-2} max={4} value={Number(f.lichter)} onChange={v => setF({ ...f, lichter: v })} />
           <Slider label={t.shadows} min={-2} max={4} value={Number(f.schatten)} onChange={v => setF({ ...f, schatten: v })} />
           <Slider label={t.color} min={-4} max={4} value={Number(f.farbe)} onChange={v => setF({ ...f, farbe: v })} />
           <Slider label={t.sharpness} min={-4} max={4} value={Number(f.schaerfe)} onChange={v => setF({ ...f, schaerfe: v })} />
           <Slider label={t.nr} min={-4} max={4} value={Number(f.rauschreduzierung)} onChange={v => setF({ ...f, rauschreduzierung: v })} />
-          <div className="field"><label>{t.toneCurve}</label><select value={f.tone_curve} onChange={e => setF({ ...f, tone_curve: e.target.value })}>{TONE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
-          <div className="field"><label>{t.colorChrome}</label><select value={f.color_chrome} onChange={e => setF({ ...f, color_chrome: e.target.value })}>{CC_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
-          <div className="field"><label>{t.notes}</label><textarea rows={2} value={f.notizen} onChange={e => setF({ ...f, notizen: e.target.value })} placeholder={t.notesPh} /></div>
-          <div className="field"><label>{t.source}</label><input value={f.quelle} onChange={e => setF({ ...f, quelle: e.target.value })} placeholder={t.sourcePh} /></div>
+          <div className="field">
+            <label>{t.toneCurve}</label>
+            <select value={f.tone_curve} onChange={e => setF({ ...f, tone_curve: e.target.value })}>
+              {TONE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>{t.colorChrome}</label>
+            <select value={f.color_chrome} onChange={e => setF({ ...f, color_chrome: e.target.value })}>
+              {CC_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>{t.notes}</label>
+            <textarea rows={2} value={f.notizen} onChange={e => setF({ ...f, notizen: e.target.value })} placeholder={t.notesPh} />
+          </div>
+          <div className="field">
+            <label>{t.source}</label>
+            <input value={f.quelle} onChange={e => setF({ ...f, quelle: e.target.value })} placeholder={t.sourcePh} />
+          </div>
         </div>
       </div>
       <div className="btn-row">
@@ -580,7 +654,9 @@ export default function Home() {
       <aside className="sidebar">
         <div>
           <h2>{t.filter}</h2>
-          <div className="field"><input placeholder={t.searchPh} value={search} onChange={e => setSearch(e.target.value)} /></div>
+          <div className="field">
+            <input placeholder={t.searchPh} value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
           <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <input type="checkbox" id="favs" checked={onlyFavs} onChange={e => setOnlyFavs(e.target.checked)} style={{ width: 'auto' }} />
             <label htmlFor="favs" style={{ marginBottom: 0 }}>{t.onlyFavs}</label>
@@ -611,13 +687,21 @@ export default function Home() {
           </select>
         </div>
         <hr className="divider" />
-        {filtered.length > 0 && <button className="btn btn-sm" onClick={exportCsv} style={{ width: '100%' }}>{t.downloadCsv}</button>}
+        {filtered.length > 0 && (
+          <button className="btn btn-sm" onClick={exportCsv} style={{ width: '100%' }}>{t.downloadCsv}</button>
+        )}
         <hr className="divider" />
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <div className="lang-switch">
-            {(['de','en'] as Lang[]).map(l => <button key={l} className={`lang-btn${lang === l ? ' active' : ''}`} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}
+            {(['de','en'] as Lang[]).map(l => (
+              <button key={l} className={`lang-btn${lang === l ? ' active' : ''}`} onClick={() => setLang(l)}>
+                {l.toUpperCase()}
+              </button>
+            ))}
           </div>
-          <button className="theme-btn" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} title="Toggle theme">{theme === 'light' ? '🌙' : '☀️'}</button>
+          <button className="theme-btn" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} title="Toggle theme">
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
         </div>
       </aside>
 
@@ -637,6 +721,7 @@ export default function Home() {
           <button className={`tab-btn${tab === 'new' ? ' active' : ''}`} onClick={() => setTab('new')}>{t.newRecipe}</button>
         </div>
 
+        {/* TAB: Saved */}
         {tab === 'saved' && (
           <div>
             {compareIds.length > 0 && (
@@ -655,9 +740,13 @@ export default function Home() {
                           <strong style={{ fontSize: '0.9rem' }}>{String(cr.name)}</strong>
                           <button className="btn btn-sm" onClick={() => setCompareIds(ids => ids.filter(i => i !== id))}>✕</button>
                         </div>
-                        {cr.bild_url && <img src={String(cr.bild_url)} alt={String(cr.name)} className="recipe-img" style={{ marginBottom: '0.5rem' }} />}
+                        {cr.bild_url && (
+                          <img src={String(cr.bild_url)} alt={String(cr.name)} className="recipe-img" style={{ marginBottom: '0.5rem' }} />
+                        )}
                         {[['filmSim','film_simulation'],['wb','weissabgleich'],['wbShift','wb_shift'],['dr','dynamikbereich'],['highlights','lichter'],['shadows','schatten'],['color','farbe'],['sharpness','schaerfe'],['nr','rauschreduzierung'],['grain','grain'],['toneCurve','tone_curve'],['colorChrome','color_chrome']].map(([lk, fk]) => (
-                          <div key={fk} className="param"><strong>{t[lk as keyof typeof t] as string}: </strong>{String(cr[fk] || '-')}</div>
+                          <div key={fk} className="param">
+                            <strong>{t[lk as keyof typeof t] as string}: </strong>{String(cr[fk] || '-')}
+                          </div>
                         ))}
                       </div>
                     );
@@ -677,11 +766,14 @@ export default function Home() {
               const isFav = String(r.favorit || '').toLowerCase() === 'ja';
               const isExpanded = expanded === r._rowIdx;
               const isEditing = editIdx === r._rowIdx;
-              const tagsList = String(r.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+              const tagsList = String(r.tags || '').split(',').map(tg => tg.trim()).filter(Boolean);
 
               return (
                 <div key={r._rowIdx} className="card">
-                  <div className="card-header" onClick={() => { setExpanded(isExpanded ? null : r._rowIdx); if (isEditing) { setEditIdx(null); setEditForm(null); } }}>
+                  <div className="card-header" onClick={() => {
+                    setExpanded(isExpanded ? null : r._rowIdx);
+                    if (isEditing) { setEditIdx(null); setEditForm(null); }
+                  }}>
                     <div>
                       <span className="card-title">{isFav ? '⭐ ' : ''}{String(r.name || t.unknown)}</span>
                       <span className="card-meta"> &middot; {String(r.kategorie || '')} &middot; {String(r.film_simulation || '')}</span>
@@ -692,7 +784,13 @@ export default function Home() {
                   {isExpanded && (
                     <div className="card-body">
                       {isEditing && editForm ? (
-                        <RecipeForm f={editForm} setF={setEditForm} onSubmit={() => handleUpdate(r)} submitLabel={t.saveChanges} onCancel={() => { setEditIdx(null); setEditForm(null); }} />
+                        <RecipeForm
+                          f={editForm}
+                          setF={setEditForm}
+                          onSubmit={() => handleUpdate(r)}
+                          submitLabel={t.saveChanges}
+                          onCancel={() => { setEditIdx(null); setEditForm(null); }}
+                        />
                       ) : (
                         <>
                           {r.bild_url ? (
@@ -701,7 +799,11 @@ export default function Home() {
                               <RecipeParams r={r} t={t} />
                             </div>
                           ) : <RecipeParams r={r} t={t} />}
-                          {tagsList.length > 0 && <div className="tags-row">{tagsList.map(tag => <span key={tag} className="tag">#{tag}</span>)}</div>}
+                          {tagsList.length > 0 && (
+                            <div className="tags-row">
+                              {tagsList.map(tag => <span key={tag} className="tag">#{tag}</span>)}
+                            </div>
+                          )}
                           {r.notizen && <div className="note-box">📝 {String(r.notizen)}</div>}
                           {r.datum && <div className="date-caption">{t.savedOn(String(r.datum))}</div>}
 
@@ -724,7 +826,9 @@ export default function Home() {
                                     if (e.target.checked) {
                                       if (compareIds.length >= 3) { showFlash('warning', t.maxCompare); return; }
                                       setCompareIds(ids => [...ids, r._rowIdx]);
-                                    } else setCompareIds(ids => ids.filter(i => i !== r._rowIdx));
+                                    } else {
+                                      setCompareIds(ids => ids.filter(i => i !== r._rowIdx));
+                                    }
                                   }} />
                                 {t.compare}
                               </label>
@@ -740,16 +844,27 @@ export default function Home() {
           </div>
         )}
 
+        {/* TAB: New Recipe */}
         {tab === 'new' && (
           <div>
             <div className="url-section">
               <h3 style={{ fontSize: '0.95rem', marginBottom: '0.5rem' }}>{t.urlImport}</h3>
               <div className="url-row">
-                <input placeholder={t.sourcePh} value={scrapeUrl} onChange={e => setScrapeUrl(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleScrape(); }} />
-                <button className="btn btn-primary" onClick={handleScrape} disabled={scraping}>{scraping ? '...' : t.urlBtn}</button>
+                <input
+                  placeholder={t.sourcePh}
+                  value={scrapeUrl}
+                  onChange={e => setScrapeUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleScrape(); }}
+                />
+                <button className="btn btn-primary" onClick={handleScrape} disabled={scraping}>
+                  {scraping ? '...' : t.urlBtn}
+                </button>
               </div>
-              {scrapeMsg && <div className={`alert alert-${scrapeMsg.type}`} style={{ marginTop: '0.5rem' }}>{scrapeMsg.msg}</div>}
+              {scrapeMsg && (
+                <div className={`alert alert-${scrapeMsg.type}`} style={{ marginTop: '0.5rem' }}>
+                  {scrapeMsg.msg}
+                </div>
+              )}
               <p className="scraper-note">{t.scrapeNote}</p>
             </div>
             <h3 style={{ fontSize: '0.95rem', marginBottom: '1rem' }}>{t.recipeData}</h3>
@@ -776,7 +891,12 @@ function RecipeParams({ r, t }: { r: Rezept; t: typeof T['de'] }) {
       <div className="param"><strong>{t.grain}: </strong>{String(r.grain || '-')}</div>
       <div className="param"><strong>{t.toneCurve}: </strong>{String(r.tone_curve || '-')}</div>
       <div className="param"><strong>{t.colorChrome}: </strong>{String(r.color_chrome || '-')}</div>
-      {r.quelle && <div className="param" style={{ gridColumn: '1 / -1' }}><strong>{t.source}: </strong><a href={String(r.quelle)} target="_blank" rel="noopener noreferrer">{String(r.quelle)}</a></div>}
+      {r.quelle && (
+        <div className="param" style={{ gridColumn: '1 / -1' }}>
+          <strong>{t.source}: </strong>
+          <a href={String(r.quelle)} target="_blank" rel="noopener noreferrer">{String(r.quelle)}</a>
+        </div>
+      )}
     </div>
   );
 }
