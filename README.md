@@ -39,3 +39,5 @@ npm install
 # .env.local erstellen mit den obigen Variablen
 npm run dev
 ```
+
+<!-- redeploy: 2 -->
