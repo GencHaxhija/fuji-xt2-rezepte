@@ -14,6 +14,30 @@ const GRAIN_OPTIONS = ['Off','Weak','Strong'];
 const CC_OPTIONS = ['Off','Weak','Strong'];
 const TONE_OPTIONS = ['None','Linear','Medium Soft','Medium Hard','Strong'];
 
+// CSS-Filter-Profile für jede Film-Simulation
+const FILM_SIM_FILTERS: Record<string, string> = {
+  'Provia/Standard':      'saturate(1.0) contrast(1.0) brightness(1.0)',
+  'Velvia/Vivid':         'saturate(1.7) contrast(1.25) brightness(1.02)',
+  'Astia/Soft':           'saturate(0.85) contrast(0.9) brightness(1.05)',
+  'Classic Chrome':       'saturate(0.7) contrast(1.1) brightness(0.97) sepia(0.15)',
+  'Classic Neg.':         'saturate(0.75) contrast(1.15) brightness(0.95) sepia(0.1)',
+  'PRO Neg. Hi':          'saturate(0.9) contrast(1.1) brightness(1.0)',
+  'PRO Neg. Std':         'saturate(0.8) contrast(0.95) brightness(1.0)',
+  'Acros':                'grayscale(1) contrast(1.15) brightness(0.98)',
+  'Acros+R':              'grayscale(1) contrast(1.2) brightness(0.97) sepia(0.05)',
+  'Acros+G':              'grayscale(1) contrast(1.1) brightness(1.02)',
+  'Acros+Ye':             'grayscale(1) contrast(1.15) brightness(1.0)',
+  'Monochrome':           'grayscale(1) contrast(1.0) brightness(1.0)',
+  'Monochrome+R':         'grayscale(1) contrast(1.05) brightness(0.98)',
+  'Monochrome+G':         'grayscale(1) contrast(0.98) brightness(1.02)',
+  'Monochrome+Ye':        'grayscale(1) contrast(1.02) brightness(1.0)',
+  'Sepia':                'sepia(0.9) contrast(0.95) brightness(1.0)',
+  'Eterna/Cinema':        'saturate(0.8) contrast(0.88) brightness(1.03)',
+  'Eterna Bleach Bypass': 'saturate(0.35) contrast(1.3) brightness(0.96)',
+  'Nostalgic Neg.':       'saturate(0.75) contrast(0.92) brightness(1.05) sepia(0.2)',
+  'Reala Ace':            'saturate(1.05) contrast(1.0) brightness(1.01)',
+};
+
 type Rezept = { [k: string]: string | number; _rowIdx: number };
 type Lang = 'de' | 'en';
 
@@ -56,6 +80,8 @@ const T = {
     compare: 'Vergleichen', comparison: 'Rezept-Vergleich',
     clearCompare: 'Vergleich leeren', maxCompare: 'Maximal 3 Rezepte vergleichen.',
     favorite: 'Favorit',
+    simPreview: 'Simulationsvorschau',
+    reset: 'Zurücksetzen',
   },
   en: {
     title: 'Fuji X-T2 Recipe Management',
@@ -95,6 +121,8 @@ const T = {
     compare: 'Compare', comparison: 'Recipe Comparison',
     clearCompare: 'Clear Comparison', maxCompare: 'You can compare max 3 recipes.',
     favorite: 'Favorite',
+    simPreview: 'Simulation Preview',
+    reset: 'Reset',
   },
 };
 
@@ -110,6 +138,7 @@ function clampVal(v: unknown, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+/** Slider with Reset-Button (✕) — only visible when value ≠ 0 */
 function Slider({ label, min, max, value, onChange }: { label: string; min: number; max: number; value: number; onChange: (v: number) => void }) {
   return (
     <div className="field">
@@ -117,6 +146,61 @@ function Slider({ label, min, max, value, onChange }: { label: string; min: numb
       <div className="slider-row">
         <input type="range" min={min} max={max} value={value} onChange={e => onChange(Number(e.target.value))} />
         <span className="slider-val">{value > 0 ? `+${value}` : value}</span>
+        <button
+          type="button"
+          className={`slider-reset${value !== 0 ? ' visible' : ''}`}
+          onClick={() => onChange(0)}
+          aria-label="Auf 0 zurücksetzen"
+          tabIndex={value !== 0 ? 0 : -1}
+        >✕</button>
+      </div>
+    </div>
+  );
+}
+
+/** Film-Simulation Vorschau mit CSS-Filtern */
+function FilmSimPreview({ simulations, label }: { simulations: string[]; label: string }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const sim = simulations[activeIdx] || simulations[0] || 'Provia/Standard';
+  const filter = FILM_SIM_FILTERS[sim] || FILM_SIM_FILTERS['Provia/Standard'];
+
+  return (
+    <div className="sim-preview">
+      <div className="sim-preview-label">{label}</div>
+      {simulations.length > 1 && (
+        <div className="sim-preview-tabs">
+          {simulations.map((s, i) => (
+            <button key={s} type="button"
+              className={`sim-tab-btn${activeIdx === i ? ' active' : ''}`}
+              onClick={() => setActiveIdx(i)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="sim-preview-name">{sim}</div>
+      <div className="sim-preview-img-wrap">
+        {/* Neutral reference stripe */}
+        <div className="sim-preview-split">
+          <img
+            src="https://picsum.photos/seed/fuji-sample/600/200"
+            alt="Original"
+            className="sim-preview-img"
+            style={{ filter: 'none' }}
+            loading="lazy"
+          />
+          <div className="sim-preview-split-label">Original</div>
+        </div>
+        <div className="sim-preview-split">
+          <img
+            src="https://picsum.photos/seed/fuji-sample/600/200"
+            alt={sim}
+            className="sim-preview-img"
+            style={{ filter }}
+            loading="lazy"
+          />
+          <div className="sim-preview-split-label">{sim}</div>
+        </div>
       </div>
     </div>
   );
@@ -157,7 +241,6 @@ export default function Home() {
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [flash, setFlash] = useState<{ type: 'success' | 'error' | 'warning'; msg: string } | null>(null);
 
-  // Filters
   const [search, setSearch] = useState('');
   const [onlyFavs, setOnlyFavs] = useState(false);
   const [filterKat, setFilterKat] = useState<string[]>([]);
@@ -165,11 +248,9 @@ export default function Home() {
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [sortOpt, setSortOpt] = useState(0);
 
-  // New / edit form
   const [form, setForm] = useState(emptyForm());
   const [editForm, setEditForm] = useState<typeof form | null>(null);
 
-  // Scraper
   const [scrapeUrl, setScrapeUrl] = useState('');
   const [scraping, setScraping] = useState(false);
   const [scrapeMsg, setScrapeMsg] = useState<{ type: 'success' | 'error' | 'info'; msg: string } | null>(null);
@@ -198,14 +279,12 @@ export default function Home() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // Derived filter options — using unique() helper instead of Set spread for TS compatibility
   const allKat = unique(rezepte.map(r => String(r.kategorie || 'Allgemein'))).sort();
   const allSims = unique(rezepte.map(r => String(r.film_simulation || '')).filter(Boolean)).sort();
   const allTagsRaw: string[] = [];
   rezepte.forEach(r => String(r.tags || '').split(',').forEach(t => { const c = t.trim(); if (c) allTagsRaw.push(c); }));
   const allTags = unique(allTagsRaw).sort();
 
-  // Apply filters
   let filtered = rezepte.filter(r => {
     if (filterKat.length && !filterKat.includes(String(r.kategorie || 'Allgemein'))) return false;
     if (filterSim.length) {
@@ -230,7 +309,6 @@ export default function Home() {
   else if (sortOpt === 2) filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   else if (sortOpt === 3) filtered.sort((a, b) => String(b.name || '').localeCompare(String(a.name || '')));
 
-  // CSV export
   const exportCsv = () => {
     const headers = Object.keys(filtered[0] || {}).filter(k => !k.startsWith('_'));
     const rows = [headers.join(';'), ...filtered.map(r => headers.map(h => String(r[h] ?? '')).join(';'))];
@@ -238,7 +316,6 @@ export default function Home() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = t.csvFile; a.click();
   };
 
-  // Scraper
   const handleScrape = async () => {
     if (!scrapeUrl) { setScrapeMsg({ type: 'error', msg: 'Bitte URL eingeben.' }); return; }
     setScraping(true); setScrapeMsg(null);
@@ -255,7 +332,6 @@ export default function Home() {
         weissabgleich: d.weissabgleich || prev.weissabgleich,
         wb_shift: d.wb_shift || prev.wb_shift,
         dynamikbereich: DR_OPTIONS.includes(d.dynamikbereich) ? d.dynamikbereich : prev.dynamikbereich,
-        // Clamp scraped slider values to valid ranges to prevent out-of-range errors
         lichter: d.lichter != null ? clampVal(d.lichter, -2, 4) : prev.lichter,
         schatten: d.schatten != null ? clampVal(d.schatten, -2, 4) : prev.schatten,
         farbe: d.farbe != null ? clampVal(d.farbe, -4, 4) : prev.farbe,
@@ -274,7 +350,6 @@ export default function Home() {
     }
   };
 
-  // Save new
   const handleSave = async () => {
     if (!form.name.trim()) { showFlash('error', t.enterName); return; }
     const now = new Date();
@@ -291,7 +366,6 @@ export default function Home() {
     setTab('saved');
   };
 
-  // Update
   const handleUpdate = async (r: Rezept) => {
     if (!editForm || !editForm.name.trim()) { showFlash('error', t.enterName); return; }
     const payload = { ...editForm, film_simulation: editForm.film_simulation.join(' / '), _rowIdx: r._rowIdx, datum: r.datum, favorit: r.favorit || '' };
@@ -303,7 +377,6 @@ export default function Home() {
     await fetchRezepte();
   };
 
-  // Delete
   const handleDelete = async (r: Rezept) => {
     const res = await fetch('/api/rezepte', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rowIdx: r._rowIdx }) });
     const data = await res.json();
@@ -313,7 +386,6 @@ export default function Home() {
     await fetchRezepte();
   };
 
-  // Toggle favorite
   const toggleFav = async (r: Rezept) => {
     const isFav = String(r.favorit || '').toLowerCase() === 'ja';
     const payload = { ...r, favorit: isFav ? '' : 'ja' };
@@ -367,6 +439,10 @@ export default function Home() {
             <label>{t.filmSim}</label>
             <MultiSelect options={FILM_SIM_OPTIONS} selected={f.film_simulation} onChange={v => setF({ ...f, film_simulation: v })} />
           </div>
+          {/* Film-Simulation Vorschau */}
+          {f.film_simulation.length > 0 && (
+            <FilmSimPreview simulations={f.film_simulation} label={t.simPreview} />
+          )}
           <div className="field"><label>{t.wb}</label><input value={f.weissabgleich} onChange={e => setF({ ...f, weissabgleich: e.target.value })} placeholder={t.wbPh} /></div>
           <div className="field"><label>{t.wbShift}</label><input value={f.wb_shift} onChange={e => setF({ ...f, wb_shift: e.target.value })} placeholder={t.wbShiftPh} /></div>
           <div className="field"><label>{t.grain}</label><select value={f.grain} onChange={e => setF({ ...f, grain: e.target.value })}>{GRAIN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
@@ -459,7 +535,6 @@ export default function Home() {
         {/* TAB: Saved */}
         {tab === 'saved' && (
           <div>
-            {/* Compare Section */}
             {compareIds.length > 0 && (
               <div style={{ marginBottom: '1.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
