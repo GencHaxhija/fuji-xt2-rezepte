@@ -98,6 +98,11 @@ const T = {
   },
 };
 
+function unique(arr: string[]): string[] {
+  const seen: { [k: string]: boolean } = {};
+  return arr.filter(v => { if (seen[v]) return false; seen[v] = true; return true; });
+}
+
 function Slider({ label, min, max, value, onChange }: { label: string; min: number; max: number; value: number; onChange: (v: number) => void }) {
   return (
     <div className="field">
@@ -186,12 +191,12 @@ export default function Home() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // Derived filter options
-  const allKat = [...new Set(rezepte.map(r => String(r.kategorie || 'Allgemein')))].sort();
-  const allSims = [...new Set(rezepte.map(r => String(r.film_simulation || '')).filter(Boolean))].sort();
-  const allTagsSet = new Set<string>();
-  rezepte.forEach(r => String(r.tags || '').split(',').forEach(t => { const c = t.trim(); if (c) allTagsSet.add(c); }));
-  const allTags = [...allTagsSet].sort();
+  // Derived filter options — using unique() helper instead of Set spread for TS compatibility
+  const allKat = unique(rezepte.map(r => String(r.kategorie || 'Allgemein'))).sort();
+  const allSims = unique(rezepte.map(r => String(r.film_simulation || '')).filter(Boolean)).sort();
+  const allTagsRaw: string[] = [];
+  rezepte.forEach(r => String(r.tags || '').split(',').forEach(t => { const c = t.trim(); if (c) allTagsRaw.push(c); }));
+  const allTags = unique(allTagsRaw).sort();
 
   // Apply filters
   let filtered = rezepte.filter(r => {
