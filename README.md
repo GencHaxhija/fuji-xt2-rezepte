@@ -1,47 +1,47 @@
-# 📷 Fuji X-T2 Film Simulation Rezepte
+# 📷 Fuji X-T2 Rezepte
 
-Persönliche Datenbank für Fujifilm X-T2 Film Simulation Rezepte — gebaut mit Streamlit.
+Persönliche Film Simulation Rezepte App für die Fujifilm X-T2.
 
-## Features
-- 🌐 **Bilingual** — Deutsch / English (umschaltbar in der App)
-- ✅ Rezepte speichern (alle Kameraparameter)
-- 🎞️ **Multiselect** für Film Simulation (mehrere Simulationen pro Rezept)
-- 🔗 **Auto-Import** von [FujiXWeekly](https://fujixweekly.com) — Rezeptdaten per URL auslesen
-- 🔍 Filtern nach Kategorie & Film Simulation (Sidebar)
-- 📝 Eigene Notizen pro Rezept
-- 🗑️ Rezepte löschen
+## Tech Stack
 
-## Tech-Stack
-| Komponente | Technologie |
-|---|---|
-| Frontend | [Streamlit](https://streamlit.io) |
-| Datenbank | Google Sheets (via `gspread`) |
-| Scraping | `requests` + `BeautifulSoup4` |
-| Auth | Google Service Account |
+- **Frontend:** React + TypeScript
+- **Build:** Vite
+- **Database:** Firebase Firestore
+- **Hosting:** Vercel
 
-## Deploy auf Streamlit Cloud
+## Setup
 
-1. Gehe zu [share.streamlit.io](https://share.streamlit.io)
-2. Mit GitHub anmelden
-3. Repository `fuji-xt2-rezepte` auswählen
-4. `app.py` als Hauptdatei auswählen
-5. **Secrets konfigurieren** — füge deinen Google Service Account Key unter `gcp_service_account` hinzu:
-   ```toml
-   [gcp_service_account]
-   type = "service_account"
-   project_id = "..."
-   private_key_id = "..."
-   private_key = "..."
-   client_email = "..."
-   # ... etc.
-   ```
-6. Deploy klicken ✅
-
-## Lokale Entwicklung
-
+### 1. Dependencies installieren
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+npm install
 ```
 
-> **Hinweis:** Für lokale Entwicklung muss eine `.streamlit/secrets.toml` Datei mit dem Service Account Key vorhanden sein.
+### 2. Firebase Projekt erstellen
+1. [Firebase Console](https://console.firebase.google.com/) → Neues Projekt
+2. Firestore Database aktivieren
+3. Web App registrieren → Config kopieren
+
+### 3. Environment Variables setzen
+Datei `.env.local` erstellen:
+```env
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
+### 4. Lokal starten
+```bash
+npm run dev
+```
+
+## Vercel Deployment
+
+1. Repo auf [vercel.com](https://vercel.com) importieren
+2. Environment Variables in Vercel Dashboard eintragen
+3. Deploy!
+
+## Legacy
+Der alte Streamlit/Python Code ist im Branch `streamlit-legacy` erhalten.
