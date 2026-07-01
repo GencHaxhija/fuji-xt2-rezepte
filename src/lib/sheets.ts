@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 
-const SHEET_ID = process.env.SHEET_ID!;
+const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
 const REQUIRED_HEADERS = [
@@ -48,7 +48,6 @@ export async function loadRezepte(): Promise<Rezept[]> {
 
 export async function saveRezept(rezept: Record<string, string | number>): Promise<void> {
   const sheets = await getSheet();
-  // Ensure headers exist
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: 'Sheet1!1:1',
@@ -63,7 +62,6 @@ export async function saveRezept(rezept: Record<string, string | number>): Promi
       requestBody: { values: [headers] },
     });
   } else {
-    // Schema upgrade
     const missing = REQUIRED_HEADERS.filter(h => !headers.includes(h));
     if (missing.length > 0) {
       const newHeaders = [...headers, ...missing];
@@ -103,7 +101,6 @@ export async function updateRezept(rowIdx: number, rezept: Record<string, string
 
 export async function deleteRezept(rowIdx: number): Promise<void> {
   const sheets = await getSheet();
-  // Get spreadsheet ID for batchUpdate
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
   const sheetId = meta.data.sheets?.[0].properties?.sheetId ?? 0;
   await sheets.spreadsheets.batchUpdate({
