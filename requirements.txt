@@ -1,6 +1,1 @@
-streamlit>=1.32.0
-gspread>=6.0.0
-google-auth>=2.0.0
-beautifulsoup4
-requests
-
+# Migrated to Next.js - see package.json
