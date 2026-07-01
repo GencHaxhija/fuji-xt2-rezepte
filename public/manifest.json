@@ -1,0 +1,24 @@
+{
+  "name": "Fuji X-T2 Rezepte",
+  "short_name": "FujiRezepte",
+  "description": "Persönliche Fujifilm X-T2 Film Simulation Rezepte",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#e8a020",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

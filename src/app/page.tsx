@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 const FILM_SIM_OPTIONS = [
   'Provia/Standard','Velvia/Vivid','Astia/Soft',
@@ -14,7 +14,6 @@ const GRAIN_OPTIONS = ['Off','Weak','Strong'];
 const CC_OPTIONS = ['Off','Weak','Strong'];
 const TONE_OPTIONS = ['None','Linear','Medium Soft','Medium Hard','Strong'];
 
-// CSS-Filter-Profile für jede Film-Simulation
 const FILM_SIM_FILTERS: Record<string, string> = {
   'Provia/Standard':      'saturate(1.0) contrast(1.0) brightness(1.0)',
   'Velvia/Vivid':         'saturate(1.7) contrast(1.25) brightness(1.02)',
@@ -74,6 +73,9 @@ const T = {
     color: 'Farbe', sharpness: 'Schärfe', nr: 'Rauschreduzierung',
     grain: 'Körnung', toneCurve: 'Gradationskurve', colorChrome: 'Color Chrome',
     imageUrl: 'Bild-URL', imageUrlPh: 'https://example.com/bild.jpg',
+    uploadPhoto: 'Foto hochladen', uploadOrUrl: 'oder URL eingeben',
+    uploadHint: 'Aus Kamerarolle wählen',
+    removePhoto: 'Foto entfernen',
     tags: 'Tags', tagsPh: 'z.B. sonnig, reise', notes: 'Notizen', notesPh: 'z.B. Ideal für goldene Stunde',
     source: 'Quelle (URL)', sourcePh: 'https://fujixweekly.com/...',
     savedOn: (d: string) => `Gespeichert am: ${d}`,
@@ -82,6 +84,8 @@ const T = {
     favorite: 'Favorit',
     simPreview: 'Simulationsvorschau',
     reset: 'Zurücksetzen',
+    ownPhoto: 'Eigenes Foto',
+    samplePhoto: 'Beispielfoto',
   },
   en: {
     title: 'Fuji X-T2 Recipe Management',
@@ -115,6 +119,9 @@ const T = {
     color: 'Color', sharpness: 'Sharpness', nr: 'Noise Reduction',
     grain: 'Grain Effect', toneCurve: 'Tone Curve', colorChrome: 'Color Chrome',
     imageUrl: 'Image URL', imageUrlPh: 'https://example.com/image.jpg',
+    uploadPhoto: 'Upload Photo', uploadOrUrl: 'or enter URL',
+    uploadHint: 'Choose from Camera Roll',
+    removePhoto: 'Remove Photo',
     tags: 'Tags', tagsPh: 'e.g. sunny, travel', notes: 'Notes', notesPh: 'e.g. Ideal for golden hour',
     source: 'Source (URL)', sourcePh: 'https://fujixweekly.com/...',
     savedOn: (d: string) => `Saved on: ${d}`,
@@ -123,6 +130,8 @@ const T = {
     favorite: 'Favorite',
     simPreview: 'Simulation Preview',
     reset: 'Reset',
+    ownPhoto: 'Own Photo',
+    samplePhoto: 'Sample Photo',
   },
 };
 
@@ -131,14 +140,13 @@ function unique(arr: string[]): string[] {
   return arr.filter(v => { if (seen[v]) return false; seen[v] = true; return true; });
 }
 
-/** Clamps a numeric value to [min, max]. Falls back to 0 if NaN. */
 function clampVal(v: unknown, min: number, max: number): number {
   const n = Number(v);
   if (isNaN(n)) return 0;
   return Math.min(max, Math.max(min, n));
 }
 
-/** Slider with Reset-Button (✕) — only visible when value ≠ 0 */
+/** Slider with Reset-Button — only visible when value ≠ 0 */
 function Slider({ label, min, max, value, onChange }: { label: string; min: number; max: number; value: number; onChange: (v: number) => void }) {
   return (
     <div className="field">
@@ -158,15 +166,106 @@ function Slider({ label, min, max, value, onChange }: { label: string; min: numb
   );
 }
 
-/** Film-Simulation Vorschau mit CSS-Filtern */
-function FilmSimPreview({ simulations, label }: { simulations: string[]; label: string }) {
+/** Foto-Upload Komponente: Kamerarolle oder URL */
+function PhotoInput({
+  value, onChange, uploadLabel, urlLabel, urlPlaceholder, uploadHint, removeLabel, orLabel
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  uploadLabel: string;
+  urlLabel: string;
+  urlPlaceholder: string;
+  uploadHint: string;
+  removeLabel: string;
+  orLabel: string;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const result = ev.target?.result as string;
+      if (result) onChange(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const isDataUrl = value.startsWith('data:');
+
+  return (
+    <div className="field">
+      <label>{urlLabel}</label>
+      {value ? (
+        <div className="photo-preview-wrap">
+          <img src={value} alt="Vorschau" className="photo-preview-thumb" />
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => { onChange(''); if (fileRef.current) fileRef.current.value = ''; }}>
+            {removeLabel}
+          </button>
+          {isDataUrl && <span className="photo-from-roll">📷 Kamerarolle</span>}
+        </div>
+      ) : (
+        <div className="photo-input-group">
+          <button
+            type="button"
+            className="btn btn-upload"
+            onClick={() => fileRef.current?.click()}
+          >
+            📷 {uploadLabel}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: 'none' }}
+            onChange={handleFile}
+          />
+          <span className="photo-or">{orLabel}</span>
+          <input
+            type="url"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={urlPlaceholder}
+            className="photo-url-input"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Film-Simulation Vorschau — unterstützt eigenes Foto (Base64/URL) oder Picsum-Fallback */
+function FilmSimPreview({ simulations, label, customImage, ownPhotoLabel, samplePhotoLabel }: {
+  simulations: string[];
+  label: string;
+  customImage?: string;
+  ownPhotoLabel: string;
+  samplePhotoLabel: string;
+}) {
   const [activeIdx, setActiveIdx] = useState(0);
+  const [useOwn, setUseOwn] = useState(false);
   const sim = simulations[activeIdx] || simulations[0] || 'Provia/Standard';
   const filter = FILM_SIM_FILTERS[sim] || FILM_SIM_FILTERS['Provia/Standard'];
+  const imgSrc = (useOwn && customImage) ? customImage : 'https://picsum.photos/seed/fuji-sample/600/200';
 
   return (
     <div className="sim-preview">
       <div className="sim-preview-label">{label}</div>
+
+      {/* Tabs: eigenes Foto vs. Beispiel */}
+      {customImage && (
+        <div className="sim-preview-source-tabs">
+          <button type="button" className={`sim-tab-btn${useOwn ? ' active' : ''}`} onClick={() => setUseOwn(true)}>
+            📷 {ownPhotoLabel}
+          </button>
+          <button type="button" className={`sim-tab-btn${!useOwn ? ' active' : ''}`} onClick={() => setUseOwn(false)}>
+            🖼 {samplePhotoLabel}
+          </button>
+        </div>
+      )}
+
       {simulations.length > 1 && (
         <div className="sim-preview-tabs">
           {simulations.map((s, i) => (
@@ -178,27 +277,15 @@ function FilmSimPreview({ simulations, label }: { simulations: string[]; label: 
           ))}
         </div>
       )}
+
       <div className="sim-preview-name">{sim}</div>
       <div className="sim-preview-img-wrap">
-        {/* Neutral reference stripe */}
         <div className="sim-preview-split">
-          <img
-            src="https://picsum.photos/seed/fuji-sample/600/200"
-            alt="Original"
-            className="sim-preview-img"
-            style={{ filter: 'none' }}
-            loading="lazy"
-          />
+          <img src={imgSrc} alt="Original" className="sim-preview-img" style={{ filter: 'none' }} loading="lazy" />
           <div className="sim-preview-split-label">Original</div>
         </div>
         <div className="sim-preview-split">
-          <img
-            src="https://picsum.photos/seed/fuji-sample/600/200"
-            alt={sim}
-            className="sim-preview-img"
-            style={{ filter }}
-            loading="lazy"
-          />
+          <img src={imgSrc} alt={sim} className="sim-preview-img" style={{ filter }} loading="lazy" />
           <div className="sim-preview-split-label">{sim}</div>
         </div>
       </div>
@@ -354,7 +441,9 @@ export default function Home() {
     if (!form.name.trim()) { showFlash('error', t.enterName); return; }
     const now = new Date();
     const datum = `${String(now.getDate()).padStart(2,'0')}.${String(now.getMonth()+1).padStart(2,'0')}.${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    const payload = { ...form, film_simulation: form.film_simulation.join(' / '), datum, favorit: '' };
+    // Base64-Bilder nicht in Sheets speichern — nur als Flag markieren
+    const bild_url_save = form.bild_url.startsWith('data:') ? '[lokales Foto]' : form.bild_url;
+    const payload = { ...form, bild_url: bild_url_save, film_simulation: form.film_simulation.join(' / '), datum, favorit: '' };
     const res = await fetch('/api/rezepte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await res.json();
     if (data.error) { showFlash('error', data.error); return; }
@@ -368,7 +457,8 @@ export default function Home() {
 
   const handleUpdate = async (r: Rezept) => {
     if (!editForm || !editForm.name.trim()) { showFlash('error', t.enterName); return; }
-    const payload = { ...editForm, film_simulation: editForm.film_simulation.join(' / '), _rowIdx: r._rowIdx, datum: r.datum, favorit: r.favorit || '' };
+    const bild_url_save = editForm.bild_url.startsWith('data:') ? '[lokales Foto]' : editForm.bild_url;
+    const payload = { ...editForm, bild_url: bild_url_save, film_simulation: editForm.film_simulation.join(' / '), _rowIdx: r._rowIdx, datum: r.datum, favorit: r.favorit || '' };
     const res = await fetch('/api/rezepte', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await res.json();
     if (data.error) { showFlash('error', data.error); return; }
@@ -439,14 +529,29 @@ export default function Home() {
             <label>{t.filmSim}</label>
             <MultiSelect options={FILM_SIM_OPTIONS} selected={f.film_simulation} onChange={v => setF({ ...f, film_simulation: v })} />
           </div>
-          {/* Film-Simulation Vorschau */}
           {f.film_simulation.length > 0 && (
-            <FilmSimPreview simulations={f.film_simulation} label={t.simPreview} />
+            <FilmSimPreview
+              simulations={f.film_simulation}
+              label={t.simPreview}
+              customImage={f.bild_url || undefined}
+              ownPhotoLabel={t.ownPhoto}
+              samplePhotoLabel={t.samplePhoto}
+            />
           )}
           <div className="field"><label>{t.wb}</label><input value={f.weissabgleich} onChange={e => setF({ ...f, weissabgleich: e.target.value })} placeholder={t.wbPh} /></div>
           <div className="field"><label>{t.wbShift}</label><input value={f.wb_shift} onChange={e => setF({ ...f, wb_shift: e.target.value })} placeholder={t.wbShiftPh} /></div>
           <div className="field"><label>{t.grain}</label><select value={f.grain} onChange={e => setF({ ...f, grain: e.target.value })}>{GRAIN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
-          <div className="field"><label>{t.imageUrl}</label><input value={f.bild_url} onChange={e => setF({ ...f, bild_url: e.target.value })} placeholder={t.imageUrlPh} /></div>
+          {/* Foto-Upload: Kamerarolle oder URL */}
+          <PhotoInput
+            value={f.bild_url}
+            onChange={v => setF({ ...f, bild_url: v })}
+            uploadLabel={t.uploadPhoto}
+            urlLabel={t.imageUrl}
+            urlPlaceholder={t.imageUrlPh}
+            uploadHint={t.uploadHint}
+            removeLabel={t.removePhoto}
+            orLabel={t.uploadOrUrl}
+          />
           <div className="field"><label>{t.tags}</label><input value={f.tags} onChange={e => setF({ ...f, tags: e.target.value })} placeholder={t.tagsPh} /></div>
         </div>
         <div>
@@ -532,7 +637,6 @@ export default function Home() {
           <button className={`tab-btn${tab === 'new' ? ' active' : ''}`} onClick={() => setTab('new')}>{t.newRecipe}</button>
         </div>
 
-        {/* TAB: Saved */}
         {tab === 'saved' && (
           <div>
             {compareIds.length > 0 && (
@@ -588,9 +692,7 @@ export default function Home() {
                   {isExpanded && (
                     <div className="card-body">
                       {isEditing && editForm ? (
-                        <>
-                          <RecipeForm f={editForm} setF={setEditForm} onSubmit={() => handleUpdate(r)} submitLabel={t.saveChanges} onCancel={() => { setEditIdx(null); setEditForm(null); }} />
-                        </>
+                        <RecipeForm f={editForm} setF={setEditForm} onSubmit={() => handleUpdate(r)} submitLabel={t.saveChanges} onCancel={() => { setEditIdx(null); setEditForm(null); }} />
                       ) : (
                         <>
                           {r.bild_url ? (
@@ -638,7 +740,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB: New Recipe */}
         {tab === 'new' && (
           <div>
             <div className="url-section">
