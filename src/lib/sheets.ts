@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
+const SHEET_NAME = 'Tabellenblatt1';
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
 const REQUIRED_HEADERS = [
@@ -34,7 +35,7 @@ export async function loadRezepte(): Promise<Rezept[]> {
   const sheets = await getSheet();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'Sheet1',
+    range: SHEET_NAME,
   });
   const rows = res.data.values || [];
   if (rows.length < 2) return [];
@@ -50,14 +51,14 @@ export async function saveRezept(rezept: Record<string, string | number>): Promi
   const sheets = await getSheet();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'Sheet1!1:1',
+    range: `${SHEET_NAME}!1:1`,
   });
   let headers: string[] = (res.data.values?.[0] as string[]) || [];
   if (headers.length === 0) {
     headers = REQUIRED_HEADERS;
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A1',
+      range: `${SHEET_NAME}!A1`,
       valueInputOption: 'RAW',
       requestBody: { values: [headers] },
     });
@@ -67,7 +68,7 @@ export async function saveRezept(rezept: Record<string, string | number>): Promi
       const newHeaders = [...headers, ...missing];
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
-        range: 'Sheet1!A1',
+        range: `${SHEET_NAME}!A1`,
         valueInputOption: 'RAW',
         requestBody: { values: [newHeaders] },
       });
@@ -77,7 +78,7 @@ export async function saveRezept(rezept: Record<string, string | number>): Promi
   const row = headers.map(h => String(rezept[h] ?? ''));
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: 'Sheet1',
+    range: SHEET_NAME,
     valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
@@ -87,13 +88,13 @@ export async function updateRezept(rowIdx: number, rezept: Record<string, string
   const sheets = await getSheet();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'Sheet1!1:1',
+    range: `${SHEET_NAME}!1:1`,
   });
   const headers: string[] = (res.data.values?.[0] as string[]) || REQUIRED_HEADERS;
   const row = headers.map(h => String(rezept[h] ?? ''));
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `Sheet1!A${rowIdx + 2}`,
+    range: `${SHEET_NAME}!A${rowIdx + 2}`,
     valueInputOption: 'RAW',
     requestBody: { values: [row] },
   });
